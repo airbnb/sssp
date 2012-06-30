@@ -37,10 +37,13 @@ REST Interface
 
 .. code-block:: text
 
-  http://s3.dist/a/path
-    GET     ->  303 to S3 signed URL
-    PUT     ->  Object is stored.
-    DELETE  ->  Object is removed.
+  GET http://s3.dist/p/a/t/h
+  GET http://s3.dist/p/a/t/h?t=<n>s
+  GET http://s3.dist/p/a/t/h?t=<timestamp>
+
+  PUT http://s3.dist/p/a/t/h
+
+  DELETE http://s3.dist/p/a/t/h
 
 Examples
 --------
