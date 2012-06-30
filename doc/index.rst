@@ -32,6 +32,16 @@ Options
   ``-lolno``
     No LOLs are permitted with this option.
 
+REST Interface
+--------------
+
+.. code-block:: text
+
+  http://s3.dist/a/path
+    GET     ->  303 to S3 signed URL
+    PUT     ->  Object is stored.
+    DELETE  ->  Object is removed.
+
 Examples
 --------
 
