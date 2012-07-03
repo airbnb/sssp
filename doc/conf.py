@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# s3dist documentation build configuration file, created by
+# s3p documentation build configuration file, created by
 # sphinx-quickstart on Thu Jun 28 19:07:06 2012.
 #
 # This file is execfile()d with the current directory set to its containing dir.
@@ -40,7 +40,7 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 # General information about the project.
-project = u's3dist'
+project = u's3p'
 copyright = u'2012, Jason Dusek'
 
 # The version info for the project you're documenting, acts as replacement for
@@ -164,7 +164,7 @@ html_static_path = ['.static']
 #html_file_suffix = None
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = 's3distdoc'
+htmlhelp_basename = 's3pdoc'
 
 
 # -- Options for LaTeX output --------------------------------------------------
@@ -183,7 +183,7 @@ latex_elements = {
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title, author, documentclass [howto/manual]).
 latex_documents = [
-  ('index', 's3dist.tex', u's3dist Documentation',
+  ('index', 's3p.tex', u's3p Documentation',
    u'Jason Dusek', 'manual'),
 ]
 
@@ -213,7 +213,7 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    ('index', 's3dist', u's3dist Documentation',
+    ('index', 's3p', u's3p Documentation',
      [u'Jason Dusek'], 1)
 ]
 
@@ -227,8 +227,8 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-  ('index', 's3dist', u's3dist Documentation',
-   u'Jason Dusek', 's3dist', 'One line description of project.',
+  ('index', 's3p', u's3p Documentation',
+   u'Jason Dusek', 's3p', 'One line description of project.',
    'Miscellaneous'),
 ]
 
