@@ -50,8 +50,8 @@ working with wildcards (see below).
 .. code-block:: text
 
   GET http://s3p.io/p/a/t/h         # Signed for the default time (10s).
-  GET http://s3p.io/p/a/t/h?t=<n>s  # Signed for <n> seconds.
-  GET http://s3p.io/p/a/t/h?t=<t>   # Signed until <t>.
+  GET http://s3p.io/p/a/t/h?t=_n_s  # Signed for _n_ seconds.
+  GET http://s3p.io/p/a/t/h?t=_t_   # Signed until _t_.
   GET http://s3p.io/p/a/t/h?nosign  # Just this URL again.
 
 A PUT to an item sets the item's content; a PUT to a listing sets all the
