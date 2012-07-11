@@ -67,7 +67,7 @@ slash is always a listing.
   GET http://s3p.io/raw/   # Listing of items below the key `raw'.
 
 To make it easier to work with versioned or timestamped assets, S3P supports a
-``/hi`` and ``/lo`` meta-path. These correspond to the ASCIIbetically highest
+``@hi`` and ``@lo`` meta-path. These correspond to the ASCIIbetically highest
 and lowest (last and first) items, respectively.
 
 .. code-block:: text
@@ -78,26 +78,26 @@ and lowest (last and first) items, respectively.
   GET http://s3p.io/raw/2010-07/mbox
 
   # Retrieval with /hi and /lo.
-  GET http://s3p.io/raw//hi/mbox  -303->  http://s3p.io/raw/2010-07/mbox
-  GET http://s3p.io/raw//lo/mbox  -303->  http://s3p.io/raw/2010-04/mbox
+  GET http://s3p.io/raw/@hi/mbox  -303->  http://s3p.io/raw/2010-07/mbox
+  GET http://s3p.io/raw/@lo/mbox  -303->  http://s3p.io/raw/2010-04/mbox
 
-The ``/hi`` and ``/lo`` wildcards, used together with a count, can make a
+The ``@hi`` and ``@lo`` wildcards, used together with a count, can make a
 listing:
 
 .. code-block:: text
 
-  GET http://s3p.io/raw//hi2/mbox  -200->  http://s3p.io/raw/2010-06/mbox
+  GET http://s3p.io/raw/@hi2/mbox  -200->  http://s3p.io/raw/2010-06/mbox
                                            http://s3p.io/raw/2010-07/mbox
 
-  GET http://s3p.io/raw//lo2/mbox  -200->  http://s3p.io/raw/2010-04/mbox
+  GET http://s3p.io/raw/@lo2/mbox  -200->  http://s3p.io/raw/2010-04/mbox
                                            http://s3p.io/raw/2010-05/mbox
 
-Counts are the natural numbers starting at 0. The wildcard ``/*`` refers to
-"all the items" (``/hi*`` and ``/lo*`` are equivalent so just ``/*`` is
+Counts are the natural numbers starting at 0. The wildcard ``@*`` refers to
+"all the items" (``@hi*`` and ``@lo*`` are equivalent so just ``@*`` is
 enough.)
 
-A counted wildcard, like ``/hi2``, can be suffixed with a tilde to form it's
-complement -- so ``/hi2~`` is everything but the highest two items. This can
+A counted wildcard, like ``@hi2``, can be suffixed with a tilde to form it's
+complement -- so ``@hi2~`` is everything but the highest two items. This can
 be useful for bulk deletion of old/new things.
 
 Examples
