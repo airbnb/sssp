@@ -171,18 +171,6 @@ wildcards = [("hi.semver", Hi SemVer)
 --               newAccs = expand sw names
 --           List.concat <$> mapM (resolve' _ t) newAccs
 
--- expand :: (Ord o) => [o] -> SetWildcard -> [o]
--- expand sw items = case specifier of
---   Include n order
---   Exclude n order
---   Complement sw' -> complementList (expand sw' set)
---   Counted Lo n   -> List.take n sorted
---   Counted Hi n   -> (List.reverse . List.take n . List.reverse) sorted
---  where
---   set = Set.fromAscList sorted
---   sorted = List.sort items
---   complementList = Set.toAscList . Set.difference set . Set.fromAscList
-
 expand :: SetWildcard -> [Text] -> [Text]
 expand set texts = if complement then complemented matching else matching
  where
