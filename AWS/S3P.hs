@@ -1,55 +1,104 @@
 {-# LANGUAGE OverloadedStrings
            , GADTs
+           , RecordWildCards
            , StandaloneDeriving
+           , ExistentialQuantification
   #-}
 module AWS.S3P where
 
 import           Control.Applicative
+import           Data.Char
 import           Data.Either
+import qualified Data.ByteString.Char8 as Bytes
 import qualified Data.List as List
 import           Data.Monoid
+import           Data.Ord
 import qualified Data.Set as Set
 import           Data.Word
 import           System.IO
+
+import qualified Blaze.ByteString.Builder as Blaze
+import qualified Blaze.ByteString.Builder.Char.Utf8 as Blaze
+import qualified Network.Wai as WWW
+import qualified Network.Wai.Handler.Warp as WWW
+import qualified Network.HTTP.Types as HTTP
 
 import qualified Aws as Aws
 import qualified Aws.S3 as Aws
 import           Data.Attempt
 import           Data.Attoparsec.Text (Parser)
 import qualified Data.Attoparsec.Text as Atto
-import Data.Text (Text)
+import           Data.Text (Text)
 import qualified Data.Text as Text
+import qualified Data.Text.Read as Text
 import qualified Network.HTTP.Conduit as Conduit
 
+
+
+-- s3p :: Ctx -> WWW.Application
+-- s3p ctx req@WWW.Request{..} = ...
+
+-- | Resources are either singular or plural in character. URLs ending ending
+--   in @/@ or containing set wildcards specify plural resources; all other
+--   URLs indicate singular resources. A singular resource results in a
+--   redirect while a plural resource results in a newline-separated list of
+--   URLs (themselves singular in character).
+data Resource t where
+  Singular :: [Either Text Wildcard] -> Resource Redirect
+  Plural :: [Either (Either Text Wildcard) SetWildcard] -> Resource [Text]
+deriving instance Eq (Resource t)
+deriving instance Ord (Resource t)
+deriving instance Show (Resource t)
+
+data Ctx = Ctx { bucket :: Aws.Bucket
+               , aws :: Aws.Configuration
+               , s3 :: Aws.S3Configuration
+               , manager :: Conduit.Manager }
+
+
+newtype Redirect = Redirect Text deriving (Eq, Ord, Show)
 
 data Order       = ASCII | SemVer deriving (Eq, Ord, Show)
 data Wildcard    = Hi Order | Lo Order deriving (Eq, Ord, Show)
 data SetWildcard = Include Word Wildcard | Exclude Word Wildcard
  deriving (Eq, Ord, Show)
 
--- | URLs are either singular or plural in character. Those ending in @/@ or
---   containing set wildcards are plural; other URLs are singular. A singular
---   URL is translated to a redirect while a plural URL is returned as a
---   newline-separated list of URLs.
-data URL t where
-  Singular :: [Either Text Wildcard] -> URL Redirect
-  Plural :: [Either (Either Text Wildcard) SetWildcard] -> URL [Text]
-deriving instance Eq (URL t)
-deriving instance Ord (URL t)
-deriving instance Show (URL t)
+-- | Interpret a request URL as a resource, expanding wildcards as needed. By
+--   default, wildcards are expanded with @\@@ as the meta-character (@\@hi@,
+--   @\@lo.semver5@) but the meta-character can be changed with a query
+--   parameter so we pass the whole request here.
+--
+--   The meta-character is in leading position in wildcard path components and
+--   escapes itself in leading position, in a simple way: leading runs are
+--   shortened by one character. Some examples of path components and their
+--   interpretation are helpful:
+-- @
+--    hi      -> The string "hi".
+--    @hi     -> The hi.ascii wildcard.
+--    @@hi    -> The string "@hi".
+--    @@@hi   -> The string "@@hi".
+--    ...and so on...
+-- @
+--   Sending @meta=_@ as a query parameter changes the meta-character to an
+--   underscore. The meta-character may be any single character; empty or
+--   overlong @meta@ parameters are ignored.
+resource :: WWW.Request -> ParsedResource
+resource WWW.Request{..} = url metaChar pathInfo
+ where
+  metaParams = [ b | Just (b, _) <- culled ] :: [Char]
+   where culled = [ Bytes.uncons v | (k, Just v) <- queryString, k == "meta" ]
+  metaChar = List.head (metaParams ++ ['@'])
 
-newtype Redirect = Redirect Text deriving (Eq, Ord, Show)
 
-
--- | A datatype that represents the result of request parsing.
-data ParsedRequest = forall t. ParsedRequest
+-- | A datatype that represents the result of request Resource parsing.
+data ParsedResource = forall t. ParsedResource
   Char -- ^ Meta character chosen for this parse.
-  (URL t) -- ^ Resultant URL, singular or plural.
-deriving instance Show ParsedRequest
+  (Resource t) -- ^ Resultant Resource, singular or plural.
+deriving instance Show ParsedResource
 
-url :: Char -> [Text] -> ParsedRequest
-url meta texts | singular  = ParsedRequest meta (Singular (lefts components))
-               | otherwise = ParsedRequest meta (Plural components)
+url :: Char -> [Text] -> ParsedResource
+url meta texts | singular  = ParsedResource meta (Singular (lefts components))
+               | otherwise = ParsedResource meta (Plural components)
  where
   (empty, full) = List.break (/= "") . List.reverse $ texts
   components = parse <$> List.reverse full
@@ -103,7 +152,7 @@ wildcards = [("hi.semver", Hi SemVer)
 
 
 -- resolve :: Ctx -> [Component] -> IO [[Text]]
--- resolve Ctx{...} = resolve' []
+-- resolve Ctx{..} = resolve' []
 --  where
 --   resolve' acc [   ] = [reverse acc]
 --   resolve' acc (h:t) = case h of
@@ -122,13 +171,10 @@ wildcards = [("hi.semver", Hi SemVer)
 --               newAccs = expand sw names
 --           List.concat <$> mapM (resolve' _ t) newAccs
 
--- data Ctx = Ctx { bucket :: Aws.Bucket
---                , aws :: Aws.Configuration
---                , s3 :: Aws.S3Configuration
---                , manager :: Conduit.Manager }
-
 -- expand :: (Ord o) => [o] -> SetWildcard -> [o]
 -- expand sw items = case specifier of
+--   Include n order
+--   Exclude n order
 --   Complement sw' -> complementList (expand sw' set)
 --   Counted Lo n   -> List.take n sorted
 --   Counted Hi n   -> (List.reverse . List.take n . List.reverse) sorted
@@ -136,6 +182,28 @@ wildcards = [("hi.semver", Hi SemVer)
 --   set = Set.fromAscList sorted
 --   sorted = List.sort items
 --   complementList = Set.toAscList . Set.difference set . Set.fromAscList
+
+expand :: SetWildcard -> [Text] -> [Text]
+expand set texts = if complement then complemented matching else matching
+ where
+  matching = (selected . ordered) texts
+  uniq = Set.fromList texts
+  complemented = ordered . Set.toList . Set.difference uniq . Set.fromList
+  (count, wc, complement) = case set of
+    Include count wc -> (fromIntegral count, wc, False)
+    Exclude count wc -> (fromIntegral count, wc, True)
+  (ordered, selected) = case wc of
+    Hi o -> (order o, List.reverse . List.take count . List.reverse)
+    Lo o -> (order o, List.take count)
+
+order :: Order -> [Text] -> [Text]
+order ASCII  = List.sort
+order SemVer = List.sortBy (comparing textSemVer)
+
+textSemVer :: Text -> [Integer]
+textSemVer = (fst <$>) . rights . (Text.decimal <$>) . digitalPieces
+ where
+  digitalPieces = List.filter (/= "") . Text.split (not . isDigit)
 
 err = hPutStrLn stderr
 
