@@ -151,25 +151,33 @@ wildcards = [("hi.semver", Hi SemVer)
 -- documentation. In lieu of left-factoring, we put the prefixes last.
 
 
--- resolve :: Ctx -> [Component] -> IO [[Text]]
--- resolve Ctx{..} = resolve' []
---  where
---   resolve' acc [   ] = [reverse acc]
---   resolve' acc (h:t) = case h of
---     Plain text -> resolve' (text:acc) t
---     Meta ... -> do
---       let prefix = (Text.intercalate "/" . reverse) ("/":acc)
---           gb = Aws.GetBucket { Aws.gbBucket = bucket
---                              , Aws.gbPrefix = Just prefix
---                              , Aws.gbDelimiter = Just "/" }
---       Aws.Response meta attempt <- Aws.aws aws s3 manager gb
---       case attempt of
---         -- Should return an error term here.
---         Failure e -> err "Request failed." >> return []
---         Success gbr -> do
---           let names   = [...]
---               newAccs = expand sw names
---           List.concat <$> mapM (resolve' _ t) newAccs
+resolve :: Ctx -> Resource t -> IO (Attempt t)
+resolve Ctx{..} res = case res of
+  Singlular components -> pluralize <$> components
+  Plural components -> simplify <$> components
+ where
+  pluralize :: Either Text Wildcard -> Either Text SetWildcard
+  pluralize = either Left (Right . Include 1)
+  simplify :: Either (Either Text Wildcard) SetWildcard
+           -> Either Text SetWildcard
+  simplify = either pluralize Right
+  resolve' :: Either Text SetWildcard -> IO (Attempt (Tree Text))
+  resolve' acc [   ] = [reverse acc]
+  resolve' acc (h:t) = case h of
+    Plain text -> resolve' (text:acc) t
+    Meta ... -> do
+      let prefix = (Text.intercalate "/" . reverse) ("/":acc)
+          gb = Aws.GetBucket { Aws.gbBucket = bucket
+                             , Aws.gbPrefix = Just prefix
+                             , Aws.gbDelimiter = Just "/" }
+      Aws.Response meta attempt <- Aws.aws aws s3 manager gb
+      case attempt of
+        -- Should return an error term here.
+        Failure e -> err "Request failed." >> return []
+        Success gbr -> do
+          let names   = [...]
+              newAccs = expand sw names
+          List.concat <$> mapM (resolve' _ t) newAccs
 
 expand :: SetWildcard -> [Text] -> [Text]
 expand set texts = if complement then complemented matching else matching
