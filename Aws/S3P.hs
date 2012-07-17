@@ -4,7 +4,7 @@
            , StandaloneDeriving
            , ExistentialQuantification
   #-}
-module AWS.S3P where
+module Aws.S3P where
 
 import           Control.Applicative
 import           Data.Char
