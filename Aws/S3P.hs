@@ -153,31 +153,43 @@ wildcards = [("hi.semver", Hi SemVer)
 
 resolve :: Ctx -> Resource t -> IO (Attempt t)
 resolve Ctx{..} res = case res of
-  Singlular components -> pluralize <$> components
-  Plural components -> simplify <$> components
+  Singular components -> do
+    attempt <- resolve' "" (pluralize <$> components)
+    return $ do
+      texts <- attempt
+      if texts == [] then Failure (userError "no key found")
+                     else (Success . Redirect . List.head) texts
+  Plural components -> resolve' "" (simplify <$> components)
  where
   pluralize :: Either Text Wildcard -> Either Text SetWildcard
   pluralize = either Left (Right . Include 1)
   simplify :: Either (Either Text Wildcard) SetWildcard
            -> Either Text SetWildcard
   simplify = either pluralize Right
-  resolve' :: Either Text SetWildcard -> IO (Attempt (Tree Text))
-  resolve' acc [   ] = [reverse acc]
-  resolve' acc (h:t) = case h of
-    Plain text -> resolve' (text:acc) t
-    Meta ... -> do
-      let prefix = (Text.intercalate "/" . reverse) ("/":acc)
-          gb = Aws.GetBucket { Aws.gbBucket = bucket
+  a -/- b | "/" `Text.isSuffixOf` a = mappend a b
+          | otherwise               = mconcat [a, "/", b]
+  resolve' :: Text -> [Either Text SetWildcard] -> IO (Attempt [Text])
+  resolve' prefix [   ] = return (Success [prefix])
+  resolve' prefix (h:t) = case h of
+    Left text -> resolve' (prefix -/- text) t
+    Right set -> do
+      -- For now, we don't do any results paging, limiting ourselves to the
+      -- first thousand results, as per the Amazon maximums.
+      let gb = Aws.GetBucket { Aws.gbBucket = bucket
                              , Aws.gbPrefix = Just prefix
-                             , Aws.gbDelimiter = Just "/" }
-      Aws.Response meta attempt <- Aws.aws aws s3 manager gb
-      case attempt of
-        -- Should return an error term here.
-        Failure e -> err "Request failed." >> return []
-        Success gbr -> do
-          let names   = [...]
-              newAccs = expand sw names
-          List.concat <$> mapM (resolve' _ t) newAccs
+                             , Aws.gbDelimiter = Just "/"
+                             , Aws.gbMaxKeys = Nothing
+                             , Aws.gbMarker = Nothing }
+      Aws.Response _meta attempt <- Aws.aws aws s3 manager gb
+      case names <$> attempt of
+        Success texts -> (List.concat <$>) . sequence <$> mapM recurse texts
+        Failure e -> return (Failure e)
+     where
+      names Aws.GetBucketResponse{..} = expand set $ case t of
+        _:_ -> Text.dropWhileEnd (=='/') <$> gbrCommonPrefixes
+        [ ] -> (prefix -/-) . Aws.objectKey <$> gbrContents
+      recurse text = resolve' text t
+
 
 expand :: SetWildcard -> [Text] -> [Text]
 expand set texts = if complement then complemented matching else matching
