@@ -45,6 +45,6 @@ allFromEnv = do
   Just creds <- Aws.loadCredentialsFromEnv
   let conf = Aws.Configuration { Aws.timeInfo = Aws.Timestamp
                                , Aws.credentials = creds
-                               , Aws.logger = Aws.defaultLog Aws.Warning }  
+                               , Aws.logger = Aws.defaultLog Aws.Warning }
   return (conf, s3cfg)
 
