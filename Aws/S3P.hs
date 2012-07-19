@@ -34,7 +34,6 @@ import qualified Data.Text.Read as Text
 import qualified Network.HTTP.Conduit as Conduit
 
 
-
 -- s3p :: Ctx -> WWW.Application
 -- s3p ctx req@WWW.Request{..} = ...
 
@@ -54,7 +53,9 @@ data Ctx = Ctx { bucket :: Aws.Bucket
                , aws :: Aws.Configuration
                , s3 :: Aws.S3Configuration
                , manager :: Conduit.Manager }
-
+instance Show Ctx where
+  show Ctx{..} = mconcat [ "Ctx { bucket=", show bucket
+                         , ", aws=..., s3=", show s3, " }" ]
 
 newtype Redirect = Redirect Text deriving (Eq, Ord, Show)
 
@@ -151,22 +152,18 @@ wildcards = [("hi.semver", Hi SemVer)
 -- documentation. In lieu of left-factoring, we put the prefixes last.
 
 
-resolve :: Ctx -> Resource t -> IO (Attempt t)
-resolve Ctx{..} res = case res of
-  Singular components -> do
-    attempt <- resolve' "" (pluralize <$> components)
-    return $ do
-      texts <- attempt
-      if texts == [] then Failure (userError "no key found")
-                     else (Success . Redirect . List.head) texts
-  Plural components -> resolve' "" (simplify <$> components)
+candidates :: Ctx -> ParsedResource -> IO (Attempt [Text])
+candidates Ctx{..} (ParsedResource _ res) = resolve' "" $ case res of
+  Singular components -> pluralize <$> components
+  Plural components   -> (simplify <$> components) ++ [Left ""]
  where
   pluralize :: Either Text Wildcard -> Either Text SetWildcard
   pluralize = either Left (Right . Include 1)
   simplify :: Either (Either Text Wildcard) SetWildcard
            -> Either Text SetWildcard
   simplify = either pluralize Right
-  a -/- b | "/" `Text.isSuffixOf` a = mappend a b
+  a -/- b | a == ""                 = mappend a b
+          | "/" `Text.isSuffixOf` a = mappend a b
           | otherwise               = mconcat [a, "/", b]
   resolve' :: Text -> [Either Text SetWildcard] -> IO (Attempt [Text])
   resolve' prefix [   ] = return (Success [prefix])
@@ -176,18 +173,19 @@ resolve Ctx{..} res = case res of
       -- For now, we don't do any results paging, limiting ourselves to the
       -- first thousand results, as per the Amazon maximums.
       let gb = Aws.GetBucket { Aws.gbBucket = bucket
-                             , Aws.gbPrefix = Just prefix
+                             , Aws.gbPrefix = Just (prefix -/- "")
                              , Aws.gbDelimiter = Just "/"
                              , Aws.gbMaxKeys = Nothing
                              , Aws.gbMarker = Nothing }
       Aws.Response _meta attempt <- Aws.aws aws s3 manager gb
+      putStrLn (show attempt)
       case names <$> attempt of
         Success texts -> (List.concat <$>) . sequence <$> mapM recurse texts
         Failure e -> return (Failure e)
      where
       names Aws.GetBucketResponse{..} = expand set $ case t of
-        _:_ -> Text.dropWhileEnd (=='/') <$> gbrCommonPrefixes
-        [ ] -> (prefix -/-) . Aws.objectKey <$> gbrContents
+        _:_ -> gbrCommonPrefixes
+        [ ] -> Aws.objectKey <$> gbrContents
       recurse text = resolve' text t
 
 
