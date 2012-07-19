@@ -13,8 +13,6 @@ import System.IO.Error
 
 import qualified Aws as Aws
 import qualified Aws.S3 as Aws
-import qualified Aws.SimpleDb as Aws
-import qualified Aws.Sqs as Aws
 
 
 -- | Interpret a region name, like @us-west-1@, in accord with the Amazon's
