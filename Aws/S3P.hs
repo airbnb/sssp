@@ -149,8 +149,8 @@ wildcards = [("hi.semver", Hi SemVer) ,("lo.semver", Lo SemVer)
 -- documentation. In lieu of left-factoring, we put the longer prefixes last.
 
 
-candidates :: Ctx -> ParsedResource -> IO (Attempt [Text])
-candidates Ctx{..} (ParsedResource _ res) = resolve' "" $ case res of
+candidates :: Ctx -> Resource t -> IO (Attempt [Text])
+candidates Ctx{..} res = resolve' "" $ case res of
   Singular components -> pluralize <$> components
   Plural components   -> (simplify <$> components) ++ [Left ""]
  where
