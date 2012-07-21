@@ -149,7 +149,7 @@ wildcards = [("hi.semver", Hi SemVer)
             ,("lo"       , Lo ASCII)]
 -- The order of these matters when they are translated to alternative
 -- Attoparsec parsers, which is unfortunate and seemingly contrary to the
--- documentation. In lieu of left-factoring, we put the prefixes last.
+-- documentation. In lieu of left-factoring, we put the longer prefixes last.
 
 
 candidates :: Ctx -> ParsedResource -> IO (Attempt [Text])
