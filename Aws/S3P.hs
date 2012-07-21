@@ -175,7 +175,6 @@ candidates Ctx{..} res = resolve' "" $ case res of
                              , Aws.gbMaxKeys = Nothing
                              , Aws.gbMarker = Nothing }
       Aws.Response _meta attempt <- Aws.aws aws s3 manager gb
-      putStrLn (show attempt)
       case names <$> attempt of
         Success texts -> (List.concat <$>) . sequence <$> mapM recurse texts
         Failure e -> return (Failure e)
