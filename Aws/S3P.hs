@@ -141,12 +141,9 @@ setWildcard meta = wildcard meta <**> (exclude <|> include)
 
 -- | Wildcards and their textual representations.
 wildcards :: [(Text, Wildcard)]
-wildcards = [("hi.semver", Hi SemVer)
-            ,("lo.semver", Lo SemVer)
-            ,("hi.ascii" , Hi ASCII)
-            ,("lo.ascii" , Lo ASCII)
-            ,("hi"       , Hi ASCII)
-            ,("lo"       , Lo ASCII)]
+wildcards = [("hi.semver", Hi SemVer) ,("lo.semver", Lo SemVer)
+            ,( "hi.ascii", Hi ASCII)  ,( "lo.ascii", Lo ASCII)
+            ,(       "hi", Hi ASCII)  ,(       "lo", Lo ASCII)]
 -- The order of these matters when they are translated to alternative
 -- Attoparsec parsers, which is unfortunate and seemingly contrary to the
 -- documentation. In lieu of left-factoring, we put the longer prefixes last.
