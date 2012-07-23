@@ -42,12 +42,9 @@ import qualified Network.HTTP.Conduit as Conduit
 --   URLs indicate singular resources. A singular resource results in a
 --   redirect while a plural resource results in a newline-separated list of
 --   URLs (themselves singular in character).
-data Resource t where
-  Singular :: [Either Text Wildcard] -> Resource Redirect
-  Plural :: [Either (Either Text Wildcard) SetWildcard] -> Resource [Text]
-deriving instance Eq (Resource t)
-deriving instance Ord (Resource t)
-deriving instance Show (Resource t)
+data Resource = Singular [Either Text Wildcard]
+              | Plural [Either (Either Text Wildcard) SetWildcard]
+ deriving (Eq, Ord, Show)
 
 data Ctx = Ctx { bucket :: Aws.Bucket
                , aws :: Aws.Configuration
@@ -83,26 +80,20 @@ data SetWildcard = Include Word Wildcard | Exclude Word Wildcard
 --   Sending @meta=_@ as a query parameter changes the meta-character to an
 --   underscore. The meta-character may be any single character; empty or
 --   overlong @meta@ parameters are ignored.
-resource :: WWW.Request -> ParsedResource
+resource :: WWW.Request -> Resource
 resource WWW.Request{..} = url metaChar pathInfo
  where
   metaParams = [ b | Just (b, _) <- culled ] :: [Char]
    where culled = [ Bytes.uncons v | (k, Just v) <- queryString, k == "meta" ]
   metaChar = List.head (metaParams ++ ['@'])
 
-
--- | A datatype that represents the result of request Resource parsing.
-data ParsedResource = forall t. ParsedResource
-  Char -- ^ Meta character chosen for this parse.
-  (Resource t) -- ^ Resultant Resource, singular or plural.
-deriving instance Show ParsedResource
-
-url :: Char -> [Text] -> ParsedResource
-url meta texts | singular  = ParsedResource meta (Singular (lefts components))
-               | otherwise = ParsedResource meta (Plural components)
+url :: Char -> [Text] -> Resource
+url meta texts | singular    = Singular (lefts components)
+               | otherwise   = Plural components
  where
   (empty, full) = List.break (/= "") . List.reverse $ texts
-  components = parse <$> List.reverse full
+  empty' = if empty /= [] then [""] else []
+  components = parse <$> List.reverse (empty' ++ full)
   singular = empty == [] && rights components == []
   -- Parser is total but just to be on the safe side...
   parse t = either (const . Left . Left $ t) id
@@ -149,41 +140,46 @@ wildcards = [("hi.semver", Hi SemVer) ,("lo.semver", Lo SemVer)
 -- documentation. In lieu of left-factoring, we put the longer prefixes last.
 
 
-candidates :: Ctx -> Resource t -> IO (Attempt [Text])
-candidates Ctx{..} res = resolve' "" $ case res of
-  Singular components -> pluralize <$> components
-  Plural components   -> (simplify <$> components) ++ [Left ""]
+resolve :: Ctx -> Resource -> IO (Attempt [Text])
+resolve Ctx{..} res = case res of
+  Singular components -> resolve' "" (pluralize <$> components)
+  Plural components   -> resolve' "" (simplify <$> components)
  where
   pluralize :: Either Text Wildcard -> Either Text SetWildcard
   pluralize = either Left (Right . Include 1)
   simplify :: Either (Either Text Wildcard) SetWildcard
            -> Either Text SetWildcard
   simplify = either pluralize Right
-  a -/- b | a == ""                 = mappend a b
-          | "/" `Text.isSuffixOf` a = mappend a b
-          | otherwise               = mconcat [a, "/", b]
   resolve' :: Text -> [Either Text SetWildcard] -> IO (Attempt [Text])
   resolve' prefix [   ] = return (Success [prefix])
   resolve' prefix (h:t) = case h of
+    Left ""   -> (fst <$>) <$> listing Ctx{..} prefix
     Left text -> resolve' (prefix -/- text) t
     Right set -> do
-      -- For now, we don't do any results paging, limiting ourselves to the
-      -- first thousand results, as per the Amazon maximums.
-      let gb = Aws.GetBucket { Aws.gbBucket = bucket
-                             , Aws.gbPrefix = Just (prefix -/- "")
-                             , Aws.gbDelimiter = Just "/"
-                             , Aws.gbMaxKeys = Nothing
-                             , Aws.gbMarker = Nothing }
-      Aws.Response _meta attempt <- Aws.aws aws s3 manager gb
+      attempt <- listing Ctx{..} prefix
       case names <$> attempt of
         Success texts -> (List.concat <$>) . sequence <$> mapM recurse texts
         Failure e -> return (Failure e)
      where
-      names Aws.GetBucketResponse{..} = expand set $ case t of
-        _:_ -> gbrCommonPrefixes
-        [ ] -> Aws.objectKey <$> gbrContents
+      names (objects, prefixes) = expand set $ case t of [ ] -> objects
+                                                         _:_ -> prefixes
       recurse text = resolve' text t
 
+
+listing :: Ctx -> Text -> IO (Attempt ([Text],[Text]))
+listing Ctx{..} prefix = do
+  -- For now, we don't do any results paging, limiting ourselves to the
+  -- first thousand results, as per the Amazon maximums.
+  Aws.Response _meta attempt <- Aws.aws aws s3 manager gb
+  return $ do
+    Aws.GetBucketResponse{..} <- attempt
+    Success (Aws.objectKey <$> gbrContents, gbrCommonPrefixes)
+ where
+  gb = Aws.GetBucket { Aws.gbBucket = bucket
+                     , Aws.gbPrefix = Just (prefix -/- "")
+                     , Aws.gbDelimiter = Just "/"
+                     , Aws.gbMaxKeys = Nothing
+                     , Aws.gbMarker = Nothing }
 
 expand :: SetWildcard -> [Text] -> [Text]
 expand set texts = if complement then complemented matching else matching
@@ -197,6 +193,10 @@ expand set texts = if complement then complemented matching else matching
   (ordered, selected) = case wc of
     Hi o -> (order o, List.reverse . List.take count . List.reverse)
     Lo o -> (order o, List.take count)
+
+a -/- b | a == ""                 = mappend a b
+        | "/" `Text.isSuffixOf` a = mappend a b
+        | otherwise               = mconcat [a, "/", b]
 
 order :: Order -> [Text] -> [Text]
 order ASCII  = List.sort
