@@ -7,10 +7,12 @@
 module Aws.S3P where
 
 import           Control.Applicative
+import           Control.Monad
 import           Data.Char
 import           Data.Either
 import qualified Data.ByteString.Char8 as Bytes
 import qualified Data.List as List
+import           Data.Maybe
 import           Data.Monoid
 import           Data.Ord
 import qualified Data.Set as Set
@@ -21,6 +23,7 @@ import qualified Blaze.ByteString.Builder as Blaze
 import qualified Blaze.ByteString.Builder.Char.Utf8 as Blaze
 import qualified Network.Wai as WWW
 import qualified Network.Wai.Handler.Warp as WWW
+import           Network.HTTP.Types (StdMethod(..))
 import qualified Network.HTTP.Types as HTTP
 
 import qualified Aws as Aws
@@ -36,6 +39,21 @@ import qualified Network.HTTP.Conduit as Conduit
 
 -- s3p :: Ctx -> WWW.Application
 -- s3p ctx req@WWW.Request{..} = ...
+
+task :: Ctx -> HTTP.StdMethod -> Resource -> IO (Maybe Task)
+task ctx m r
+  | GET    <- m, Singular _ <- r = (Redirect <$>) . join
+                                 . (listToMaybe <$>) <$> resolved
+  | GET    <- m, Plural   _ <- r = (Listing <$>) <$> resolved
+  | DELETE <- m                  = (Remove <$>) <$> resolved
+  | PUT    <- m, Singular _ <- r = (Write <$>) . join
+                                 . (listToMaybe <$>) <$> resolved
+  | otherwise                    = return Nothing
+ where
+  resolved = fromAttempt <$> resolve ctx r
+
+data Task = Redirect Text | Listing [Text] | Remove [Text] | Write Text
+ deriving (Eq, Ord, Show)
 
 -- | Resources are either singular or plural in character. URLs ending ending
 --   in @/@ or containing set wildcards specify plural resources; all other
@@ -53,8 +71,6 @@ data Ctx = Ctx { bucket :: Aws.Bucket
 instance Show Ctx where
   show Ctx{..} = mconcat [ "Ctx { bucket=", show bucket
                          , ", aws=..., s3=", show s3, " }" ]
-
-newtype Redirect = Redirect Text deriving (Eq, Ord, Show)
 
 data Order       = ASCII | SemVer deriving (Eq, Ord, Show)
 data Wildcard    = Hi Order | Lo Order deriving (Eq, Ord, Show)
