@@ -140,6 +140,9 @@ wildcards = [("hi.semver", Hi SemVer) ,("lo.semver", Lo SemVer)
 -- documentation. In lieu of left-factoring, we put the longer prefixes last.
 
 
+-- | Translate a resource in to a listing of objects. While intermediate S3
+--   prefixes (directories) are traversed, the final match is always on keys
+--   for objects.
 resolve :: Ctx -> Resource -> IO (Attempt [Text])
 resolve Ctx{..} res = case res of
   Singular components -> resolve' "" (pluralize <$> components)
