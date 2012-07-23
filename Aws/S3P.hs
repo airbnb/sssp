@@ -161,9 +161,9 @@ resolve Ctx{..} res = case res of
         Success texts -> (List.concat <$>) . sequence <$> mapM recurse texts
         Failure e -> return (Failure e)
      where
+      recurse text = resolve' text t
       names (objects, prefixes) = expand set $ case t of [ ] -> objects
                                                          _:_ -> prefixes
-      recurse text = resolve' text t
 
 
 listing :: Ctx -> Text -> IO (Attempt ([Text],[Text]))
