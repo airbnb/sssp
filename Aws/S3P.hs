@@ -218,6 +218,21 @@ a -/- b | a == ""                 = mappend a b
         | "/" `Text.isSuffixOf` a = mappend a b
         | otherwise               = mconcat [a, "/", b]
 
+-- | Split a URL into components, placing the balance of slashes in a slash
+--   run to the left of the slash. This is what all the Amazon APIs --
+--   including the HTTP interface -- seem to expect, based on experiment.
+--   This function exists so that we can split a URL retrieved from S3, by way
+--   of list bucket, for example, into pieces for later escaping.
+s3Pieces :: Text -> [Text]
+s3Pieces text = reverse . uncurry (:) $ List.foldl' f (leading', []) rest'
+ where
+  (leading, rest) = List.span (=="") (Text.split (=='/') text)
+  leading'' = Text.pack [ '/' | _ <- leading ]
+  (leading', rest') | h:t <- rest = (mappend leading'' h, t)
+                    | otherwise   = (leading'', [])
+  f (piece, pieces) "" = (piece `Text.snoc` '/', pieces)
+  f (piece, pieces) s  = (s, piece:pieces)
+
 order :: Order -> [Text] -> [Text]
 order ASCII  = List.sort
 order SemVer = List.sortBy (comparing textSemVer)
