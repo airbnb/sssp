@@ -3,6 +3,7 @@
            , RecordWildCards
            , StandaloneDeriving
            , ExistentialQuantification
+           , PatternGuards
   #-}
 module Aws.S3P where
 
