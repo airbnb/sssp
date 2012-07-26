@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings
            , GADTs
+           , ParallelListComp
            , RecordWildCards
            , StandaloneDeriving
            , ExistentialQuantification
@@ -9,6 +10,7 @@ module Aws.S3P where
 
 import           Control.Applicative
 import           Control.Monad
+import           Control.Monad.Trans
 import           Data.Char
 import           Data.Either
 import qualified Data.ByteString.Char8 as Bytes
@@ -28,10 +30,13 @@ import           Network.HTTP.Types (StdMethod(..))
 import qualified Network.HTTP.Types as HTTP
 
 import qualified Aws as Aws
+import qualified Aws.Core as Aws
 import qualified Aws.S3 as Aws
 import           Data.Attempt
 import           Data.Attoparsec.Text (Parser)
 import qualified Data.Attoparsec.Text as Atto
+import qualified Data.Conduit as Conduit
+import qualified Data.Enumerator.List as Enumerator
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Read as Text
@@ -41,19 +46,76 @@ import qualified Network.HTTP.Conduit as Conduit
 -- s3p :: Ctx -> WWW.Application
 -- s3p ctx req@WWW.Request{..} = ...
 
-task :: Ctx -> HTTP.StdMethod -> Resource -> IO (Maybe Task)
+proxy :: Ctx -> WWW.Application
+proxy ctx@Ctx{..} req@WWW.Request{..} = do
+  resolved <- liftIO $ task ctx requestMethod (resource req)
+  maybe (return badTask) id $ do
+    task <- resolved
+    Just $ case task of
+      Redirect t -> do
+        i <- liftIO $ sigData 10
+        let q = Aws.getObject bucket t Aws.s3ErrorResponseConsumer
+            s = Aws.queryToUri (Aws.signQuery q s3 i)
+            b = Blaze.fromByteString (s `Bytes.snoc` '\n')
+        return $ WWW.ResponseBuilder
+          status307 [("Content-Type", "text/plain"),("Location", s)] b
+      Listing ts -> do
+        return $ WWW.ResponseBuilder
+          HTTP.status200 [("Content-Type", "text/plain")]
+                         (Blaze.fromText . Text.unlines $ s3Basename <$> ts)
+      Remove ts  -> do
+        let deletes = [ Aws.DeleteObject t bucket | t <- ts ]
+        responses <- mapM (Aws.aws aws s3 manager) deletes
+        let attempts = [ attempt | Aws.Response _meta attempt <- responses ]
+            d = [ mappend `uncurry` case a of
+                    Success _ -> ("deleted: ", t)
+                    Failure _ -> ("failed:  ", t) | a <- attempts | t <- ts ]
+            status | all isSuccess attempts = HTTP.status200
+                   | otherwise              = HTTP.status500
+        return $ WWW.ResponseBuilder
+          status [("Content-Type", "text/plain")]
+                 (Blaze.fromText . Text.unlines $ d)
+      Write t    -> do
+        let len = join $ listToMaybe
+                  [ fst <$> (listToMaybe . reads . Bytes.unpack) v
+                  | (k, v) <- requestHeaders, k == "Content-Length" ]
+        maybe (return noLength) id $ do
+          n <- len
+          let po = Aws.putObject bucket t (blazeBody n)g
+          Just $ do
+            Aws.Response _meta attempt <- Aws.aws aws s3 manager po
+            let status | isSuccess attempt = HTTP.status200
+                       | otherwise         = HTTP.status500
+            return $ WWW.ResponseBuilder
+              status [("Content-Type", "text/plain")] mempty
+ where
+  status307 = HTTP.Status 307 "Temporary Redirect"
+  sigData n = Aws.signatureData (Aws.ExpiresIn n) (Aws.credentials aws)
+  badTask = WWW.ResponseBuilderg
+    HTTP.status400 [("Content-Type", "text/plain")]
+                   (Blaze.fromByteString "Malformed task.")
+  noLength = WWW.ResponseBuilderg
+    HTTP.status400 [("Content-Type", "text/plain")]
+                   (Blaze.fromByteString "No Content-Length header.")
+  blazeBody len = Conduit.RequestBodySource len
+                . Conduit.mapOutput (Blaze.fromByteString) $ requestBody
+
+task :: Ctx -> HTTP.Method -> Resource -> IO (Maybe Task)
 task ctx m r
-  | GET    <- m, Singular _ <- r = (Redirect <$>) . join
-                                 . (listToMaybe <$>) <$> resolved
-  | GET    <- m, Plural   _ <- r = (Listing <$>) <$> resolved
-  | DELETE <- m                  = (Remove <$>) <$> resolved
-  | PUT    <- m, Singular _ <- r = (Write <$>) . join
-                                 . (listToMaybe <$>) <$> resolved
-  | otherwise                    = return Nothing
+  | "GET"    <- m, Singular _ <- r = (Redirect <$>) . join
+                                   . (listToMaybe <$>) <$> resolved
+  | "GET"    <- m, Plural   _ <- r = (Listing <$>) <$> resolved
+  | "DELETE" <- m                  = (Remove <$>) <$> resolved
+  | "PUT"    <- m, Singular _ <- r = (Write <$>) . join
+                                   . (listToMaybe <$>) <$> resolved
+  | otherwise                      = return Nothing
  where
   resolved = fromAttempt <$> resolve ctx r
 
-data Task = Redirect Text | Listing [Text] | Remove [Text] | Write Text
+data Task = Redirect Text
+          | Listing [Text]
+          | Remove [Text]
+          | Write Text -- (Conduit.RequestBody IO)
  deriving (Eq, Ord, Show)
 
 -- | Resources are either singular or plural in character. URLs ending ending
@@ -218,20 +280,13 @@ a -/- b | a == ""                 = mappend a b
         | "/" `Text.isSuffixOf` a = mappend a b
         | otherwise               = mconcat [a, "/", b]
 
--- | Split a URL into components, placing the balance of slashes in a slash
---   run to the left of the slash. This is what all the Amazon APIs --
---   including the HTTP interface -- seem to expect, based on experiment.
---   This function exists so that we can split a URL retrieved from S3, by way
---   of list bucket, for example, into pieces for later escaping.
-s3Pieces :: Text -> [Text]
-s3Pieces text = reverse . uncurry (:) $ List.foldl' f (leading', []) rest'
+-- | Find the basename of an S3 path, accounting for the fact that a slash run
+--   could legitimately be part of the last part of the name.
+s3Basename :: Text -> Text
+s3Basename text = mconcat [ (maybe mempty id . listToMaybe) rest
+                          , Text.pack (const '/' <$> empties) ]
  where
-  (leading, rest) = List.span (=="") (Text.split (=='/') text)
-  leading'' = Text.pack [ '/' | _ <- leading ]
-  (leading', rest') | h:t <- rest = (mappend leading'' h, t)
-                    | otherwise   = (leading'', [])
-  f (piece, pieces) "" = (piece `Text.snoc` '/', pieces)
-  f (piece, pieces) s  = (s, piece:pieces)
+  (empties, rest) = List.span (=="") . List.reverse . Text.split (=='/') $ text
 
 order :: Order -> [Text] -> [Text]
 order ASCII  = List.sort
