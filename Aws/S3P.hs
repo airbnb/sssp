@@ -43,9 +43,6 @@ import qualified Data.Text.Read as Text
 import qualified Network.HTTP.Conduit as Conduit
 
 
--- s3p :: Ctx -> WWW.Application
--- s3p ctx req@WWW.Request{..} = ...
-
 proxy :: Ctx -> WWW.Application
 proxy ctx@Ctx{..} req@WWW.Request{..} = do
   resolved <- liftIO $ task ctx requestMethod (resource req)
