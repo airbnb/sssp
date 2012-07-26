@@ -38,7 +38,6 @@ s3FromEnv = do
   pure $ case res of Nothing -> Aws.defaultConfiguration
                      Just s  -> Aws.defaultConfiguration{Aws.s3Endpoint=s}
 
-
 allFromEnv :: IO (Aws.Configuration, Aws.S3Configuration)
 allFromEnv = do
   s3cfg <- s3FromEnv
