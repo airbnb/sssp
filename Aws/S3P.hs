@@ -163,6 +163,7 @@ resource WWW.Request{..} = url metaChar pathInfo
   metaChar = List.head (metaParams ++ ['@'])
 
 url :: Char -> [Text] -> Resource
+url _    []                  = Plural []
 url meta texts | singular    = Singular (lefts components)
                | otherwise   = Plural components
  where
@@ -220,8 +221,9 @@ wildcards = [("hi.semver", Hi SemVer) ,("lo.semver", Lo SemVer)
 --   for objects.
 resolve :: Ctx -> Resource -> IO (Attempt [Text])
 resolve Ctx{..} res = case res of
-  Singular components -> resolve' "" (pluralize <$> components)
+  Plural [ ]          -> (fst <$>) <$> listing Ctx{..} ""
   Plural components   -> resolve' "" (simplify <$> components)
+  Singular components -> resolve' "" (pluralize <$> components)
  where
   pluralize :: Either Text Wildcard -> Either Text SetWildcard
   pluralize = either Left (Right . Include 1)
