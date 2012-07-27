@@ -50,8 +50,10 @@ fromBytes bytes = Map.fromList
 
 line :: Parser (ByteString, ByteString)
 line  = optional (string "export") *> skipSpace *> do
-  (,) <$> choice (string <$> variables)
-      <*> (skipWhile (inClass " :=") *> takeTill (inClass "\n\r"))
+        (,) <$> choice (string <$> variables)
+            <*> (skipWhile (inClass " :=") *> chopped)
+ where
+  chopped = fst . Bytes.spanEnd isSpace <$> takeTill (inClass "\n\r")
 
 fromEnvAndSTDIN = do
   env    <- fromEnv
