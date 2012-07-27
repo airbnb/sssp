@@ -10,8 +10,8 @@ import           System.IO
 
 import qualified Network.Wai.Handler.Warp as WWW
 
-import Aws.S3P.Configuration
-import Aws.S3P
+import Aws.SSSP.Configuration
+import Aws.SSSP
 
 
 main = do

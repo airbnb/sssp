@@ -2,7 +2,7 @@
            , TupleSections #-}
 -- | Utilities for determining the server configuration from environment
 --   variables and file input.
-module Aws.S3P.Configuration where
+module Aws.SSSP.Configuration where
 
 import           Control.Applicative
 import           Control.Exception
@@ -27,7 +27,7 @@ import qualified Data.Text.Encoding.Error as Text
 import qualified Network.HTTP.Conduit as Conduit
 import qualified Network.Wai.Handler.Warp as WWW
 
-import Aws.S3P (Ctx(..))
+import Aws.SSSP (Ctx(..))
 
 
 variables =

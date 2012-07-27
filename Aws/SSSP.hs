@@ -6,7 +6,7 @@
            , ExistentialQuantification
            , PatternGuards
   #-}
-module Aws.S3P where
+module Aws.SSSP where
 
 import           Control.Applicative
 import           Control.Monad
