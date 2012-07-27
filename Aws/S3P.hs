@@ -77,7 +77,7 @@ proxy ctx@Ctx{..} req@WWW.Request{..} = do
                   | (k, v) <- requestHeaders, k == "Content-Length" ]
         maybe (return noLength) id $ do
           n <- len
-          let po = Aws.putObject bucket t (blazeBody n)g
+          let po = Aws.putObject bucket t (blazeBody n)
           Just $ do
             Aws.Response _meta attempt <- Aws.aws aws s3 manager po
             let status | isSuccess attempt = HTTP.status200
@@ -87,23 +87,23 @@ proxy ctx@Ctx{..} req@WWW.Request{..} = do
  where
   status307 = HTTP.Status 307 "Temporary Redirect"
   sigData n = Aws.signatureData (Aws.ExpiresIn n) (Aws.credentials aws)
-  badTask = WWW.ResponseBuilderg
+  badTask = WWW.ResponseBuilder
     HTTP.status400 [("Content-Type", "text/plain")]
-                   (Blaze.fromByteString "Malformed task.")
-  noLength = WWW.ResponseBuilderg
+                   (Blaze.fromByteString "Malformed task.\n")
+  noLength = WWW.ResponseBuilder
     HTTP.status400 [("Content-Type", "text/plain")]
-                   (Blaze.fromByteString "No Content-Length header.")
+                   (Blaze.fromByteString "No Content-Length header.\n")
   blazeBody len = Conduit.RequestBodySource len
                 . Conduit.mapOutput (Blaze.fromByteString) $ requestBody
 
 task :: Ctx -> HTTP.Method -> Resource -> IO (Maybe Task)
 task ctx m r
-  | "GET"    <- m, Singular _ <- r = (Redirect <$>) . join
-                                   . (listToMaybe <$>) <$> resolved
+  | "GET"    <- m, Singular _ <- r = (Redirect <$>) . (listToMaybe =<<)
+                                  <$> resolved
   | "GET"    <- m, Plural   _ <- r = (Listing <$>) <$> resolved
   | "DELETE" <- m                  = (Remove <$>) <$> resolved
-  | "PUT"    <- m, Singular _ <- r = (Write <$>) . join
-                                   . (listToMaybe <$>) <$> resolved
+  | "PUT"    <- m, Singular _ <- r = (Write <$>) . (listToMaybe =<<)
+                                  <$> resolved
   | otherwise                      = return Nothing
  where
   resolved = fromAttempt <$> resolve ctx r
@@ -243,7 +243,6 @@ resolve Ctx{..} res = case res of
       names (objects, prefixes) = expand set $ case t of [ ] -> objects
                                                          _:_ -> prefixes
 
-
 listing :: Ctx -> Text -> IO (Attempt ([Text],[Text]))
 listing Ctx{..} prefix = do
   -- For now, we don't do any results paging, limiting ourselves to the
@@ -292,6 +291,4 @@ textSemVer :: Text -> [Integer]
 textSemVer = (fst <$>) . rights . (Text.decimal <$>) . digitalPieces
  where
   digitalPieces = List.filter (/= "") . Text.split (not . isDigit)
-
-err = hPutStrLn stderr
 
