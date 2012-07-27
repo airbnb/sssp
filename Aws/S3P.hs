@@ -42,8 +42,8 @@ import           Network.HTTP.Types (StdMethod(..))
 import qualified Network.HTTP.Types as HTTP
 
 
-proxy :: Ctx -> WWW.Application
-proxy ctx@Ctx{..} req@WWW.Request{..} = do
+wai :: Ctx -> WWW.Application
+wai ctx@Ctx{..} req@WWW.Request{..} = do
   resolved <- liftIO $ task ctx requestMethod (resource req)
   maybe (return badTask) id $ do
     task <- resolved

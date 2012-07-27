@@ -17,7 +17,7 @@ import Aws.S3P
 main = do
   res <- conf
   case res of Left map  -> err (misconfigured map)
-              Right (ctx, www) -> WWW.runSettings www (proxy ctx) 
+              Right (ctx, www) -> WWW.runSettings www (wai ctx)
  where
   misconfigured map = mappend "!!! Misconfigured; please check:\n" (render map)
 
