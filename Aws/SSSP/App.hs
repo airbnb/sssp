@@ -1,6 +1,7 @@
-#!/usr/bin/env runhaskell
 {-# LANGUAGE OverloadedStrings
   #-}
+module Aws.SSSP.App where
+
 import qualified Data.ByteString.Char8 as Bytes
 import           Data.Map (Map)
 import qualified Data.Map as Map
@@ -14,9 +15,9 @@ import Aws.SSSP.Configuration
 import Aws.SSSP
 
 
-main = do
+web = do
   res <- conf
-  case res of Left map  -> err (misconfigured map)
+  case res of Left map         -> err (misconfigured map)
               Right (ctx, www) -> WWW.runSettings www (wai ctx)
  where
   misconfigured map = mappend "!!! Misconfigured; please check:\n" (render map)
