@@ -13,6 +13,7 @@ import           Control.Monad
 import           Control.Monad.Trans
 import           Data.Char
 import           Data.Either
+import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as Bytes
 import qualified Data.List as List
 import           Data.Maybe
@@ -49,12 +50,15 @@ wai ctx@Ctx{..} req@WWW.Request{..} = do
     task <- resolved
     Just $ case task of
       Redirect t -> do
-        let signFor = 10
-        sigInfo <- liftIO $ sigData signFor
+        n <- case [ toSignTime v | (k, Just v) <- queryString, k == "t" ] of
+               [              ] -> return 10
+               Just seconds : _ -> return seconds
+               Nothing      : _ -> return 10 -- TODO: Bad param message.
+        sigInfo <- liftIO $ sigData (fromIntegral n)
         let q = Aws.getObject bucket t Aws.s3ErrorResponseConsumer
             s = Aws.queryToUri (Aws.signQuery q s3 sigInfo)
             b = Blaze.fromByteString (s `Bytes.snoc` '\n')
-            m = "max-age=" ++ show (floor signFor :: Integer)
+            m = "max-age=" ++ show (n - 1)
             headers = [("Cache-Control", Bytes.pack m)
                       ,("Content-Type", "text/plain")
                       ,("Location", s)]
@@ -99,6 +103,11 @@ wai ctx@Ctx{..} req@WWW.Request{..} = do
                    (Blaze.fromByteString "No Content-Length header.\n")
   blazeBody len = Conduit.RequestBodySource len
                 . Conduit.mapOutput (Blaze.fromByteString) $ requestBody
+  toSignTime :: ByteString -> Maybe Integer
+  toSignTime  = (validate =<<) . (fst <$>) . listToMaybe . reads . Bytes.unpack
+   where
+    validate i   = guard (notTooMany i) >> Just i
+    notTooMany i = i >= 2 && i <= 10000000 -- 4 months
 
 task :: Ctx -> HTTP.Method -> Resource -> IO (Maybe Task)
 task ctx m r
