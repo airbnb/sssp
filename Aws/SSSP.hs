@@ -58,7 +58,7 @@ wai ctx@Ctx{..} req@WWW.Request{..} = do
       Listing ts -> do
         return $ WWW.ResponseBuilder
           HTTP.status200 [("Content-Type", "text/plain")]
-                         (Blaze.fromText . Text.unlines $ s3Basename <$> ts)
+                         (mconcat (plusNL . s3Encode <$> ts))
       Remove ts  -> do
         let deletes = [ Aws.DeleteObject t bucket | t <- ts ]
         responses <- mapM (Aws.aws aws s3 manager) deletes
@@ -147,7 +147,7 @@ data SetWildcard = Include Word Wildcard | Exclude Word Wildcard
 --   interpretation are helpful:
 -- @
 --    hi      -> The string "hi".
---    @hi     -> The hi.ascii wildcard.
+--    @hi     -> The hi.semver wildcard.
 --    @@hi    -> The string "@hi".
 --    @@@hi   -> The string "@@hi".
 --    ...and so on...
@@ -208,9 +208,9 @@ setWildcard meta = wildcard meta <**> (exclude <|> include)
 
 -- | Wildcards and their textual representations.
 wildcards :: [(Text, Wildcard)]
-wildcards = [("hi.semver", Hi SemVer) ,("lo.semver", Lo SemVer)
-            ,( "hi.ascii", Hi ASCII)  ,( "lo.ascii", Lo ASCII)
-            ,(       "hi", Hi ASCII)  ,(       "lo", Lo ASCII)]
+wildcards = [( "hi.ascii", Hi ASCII)  ,( "lo.ascii", Lo ASCII)
+            ,("hi.semver", Hi SemVer) ,("lo.semver", Lo SemVer)
+            ,(       "hi", Hi SemVer) ,(       "lo", Lo SemVer)]
 -- The order of these matters when they are translated to alternative
 -- Attoparsec parsers, which is unfortunate and seemingly contrary to the
 -- documentation. In lieu of left-factoring, we put the longer prefixes last.
@@ -277,13 +277,28 @@ a -/- b | a == ""                 = mappend a b
         | "/" `Text.isSuffixOf` a = mappend a b
         | otherwise               = mconcat [a, "/", b]
 
--- | Find the basename of an S3 path, accounting for the fact that a slash run
---   could legitimately be part of the last part of the name.
-s3Basename :: Text -> Text
-s3Basename text = mconcat [ (maybe mempty id . listToMaybe) rest
-                          , Text.pack (const '/' <$> empties) ]
+-- | Split a URL into components, placing the balance of slashes in a slash
+--   run to the left of the last slash. This is what all the Amazon APIs --
+--   including the HTTP interface -- seem to expect, based on experiment.
+--   This function exists so that we can split a URL retrieved from S3, by way
+--   of list bucket, for example, into pieces for later escaping.
+s3Pieces :: Text -> [Text]
+s3Pieces text = reverse . uncurry (:) $ List.foldl' f (leading', []) rest'
  where
-  (empties, rest) = List.span (=="") . List.reverse . Text.split (=='/') $ text
+  (leading, rest) = List.span (=="") (Text.split (=='/') text)
+  leading'' = Text.pack [ '/' | _ <- leading ]
+  (leading', rest') | h:t <- rest = (mappend leading'' h, t)
+                    | otherwise   = (leading'', [])
+  f (piece, pieces) "" = (piece `Text.snoc` '/', pieces)
+  f (piece, pieces) s  = (s, piece:pieces)
+
+-- | Encode an S3 path to a URL, splitting on slashes but preserving slash
+--   runs as appropriate.
+s3Encode :: Text -> Blaze.Builder
+s3Encode  = HTTP.encodePathSegmentsRelative . s3Pieces
+
+plusNL :: Blaze.Builder -> Blaze.Builder
+plusNL  = (`mappend` Blaze.fromChar '\n')
 
 order :: Order -> [Text] -> [Text]
 order ASCII  = List.sort

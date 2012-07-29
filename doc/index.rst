@@ -7,7 +7,7 @@ Synopsis
 
 .. code-block:: text
 
-    sssp ...
+    sssp web?
 
 Description
 -----------
@@ -26,11 +26,38 @@ Use-cases for SSSP include:
 
   * distribution of internal software.
 
-Options
--------
+SSSP supports configuration via environment variables or STDIN.
 
-  ``-lolno``
-    No LOLs are permitted with this option.
+Configuration
+-------------
+
+These settings can be passed as environment variables or fed to the server on
+STDIN in colon separated format.
+
+.. code-block:: bash
+
+  # AWS Settings
+  AWS_ACCESS_KEY_ID           = account access key
+  AWS_SECRET_ACCESS_KEY       = secret
+  AWS_REGION                  = eu-west-1, classic, us-east-1, ...
+
+  # Storage settings
+  SSSP_BUCKET                 = DNS friendly bucket name
+
+  # Server settings
+  SSSP_CONN                   = <ip>:<port> pair
+  PORT                        = port to connect to, on localhost
+
+SSSP is fairly liberal when parsing STDIN. In fact, Bourne shell .rc files,
+like the follow example, are parsed without error:
+
+.. code-block:: bash
+
+  export SSSP_BUCKET=dist
+  export SSSP_CONN=*:6000
+
+However, SSSP does not parse shell quotes (which one is unlikely to need for
+the kinds of values involved, given their rigid formats).
 
 REST Interface
 --------------
@@ -65,34 +92,34 @@ slash is always a listing.
 
 .. code-block:: text
 
-  GET http://sssp.io/raw    # Signed redirect to an object called raw.
-  GET http://sssp.io/raw/   # Listing of items below the key `raw'.
+  GET http://sssp.io/dist   # Signed redirect to an object called dist.
+  GET http://sssp.io/dist/  # Listing of items below the key `dist'.
 
-To make it easier to work with versioned or timestamped assets, SSSP supports a
-``@hi`` and ``@lo`` meta-path. These correspond to the ASCIIbetically highest
-and lowest (last and first) items, respectively.
-
-.. code-block:: text
-
-  GET http://sssp.io/raw/2010-04/mbox
-  GET http://sssp.io/raw/2010-05/mbox
-  GET http://sssp.io/raw/2010-06/mbox
-  GET http://sssp.io/raw/2010-07/mbox
-
-  # Retrieval with /hi and /lo.
-  GET http://sssp.io/raw/@hi/mbox  -307->  http://sssp.io/raw/2010-07/mbox
-  GET http://sssp.io/raw/@lo/mbox  -307->  http://sssp.io/raw/2010-04/mbox
-
-The ``@hi`` and ``@lo`` wildcards, used together with a count, can make a
-listing:
+To make it easier to work with versioned or timestamped assets, SSSP supports
+the ``@hi`` and ``@lo`` meta-paths. These correspond to the names that sort
+highest and lowest according to semantic version sort, where non-digit chars
+serve to delimit arrays of numbers. For common forms of dates, these have the
+same effect as ASCII sort. (ASCII sort may specified, as well; please the
+section WILDCARDS, below.)
 
 .. code-block:: text
 
-  GET http://sssp.io/raw/@hi2/mbox  -200->  mbox
-                                            mbox
+  GET http://sssp.io/dist/x/x-0.1.1.tgz
+  GET http://sssp.io/dist/x/x-0.1.4.tgz
+  GET http://sssp.io/dist/x/x-0.2.11.tgz
+  GET http://sssp.io/dist/x/x-0.2.9.tgz
 
-  GET http://sssp.io/raw/@lo2/mbox  -200->  mbox
-                                            mbox
+  # Retrieval with @hi and @lo.
+  GET http://sssp.io/dist/x/@hi  -307->  http://sssp.io/dist/x/x-0.2.11.tgz
+  GET http://sssp.io/dist/x/@lo  -307->  http://sssp.io/dist/x/x-0.1.1.tgz
+
+Wildcards ``@hi`` and ``@lo`` used together with a count specify a set
+wildcard; the result is a listing:
+
+.. code-block:: text
+
+  GET http://sssp.io/dist/x/@lo2  -200->  dist/x/x-0.1.1.tgz
+                                          dist/x/x-0.1.4.tgz
 
 Counts are the natural numbers starting at 0.
 
@@ -104,13 +131,34 @@ A counted wildcard, like ``@hi2``, can be suffixed with a tilde to form it's
 complement -- so ``@hi2~`` is everything but the highest two items. This can
 be useful for bulk deletion of old/new things.
 
+Wildcards
+---------
+
+  ``@hi.semver``, ``@lo.semver``
+    Key with highest or lowest version, according to a liberalized form of
+    "semantic versioning", where version components are delimited by any
+    non-digit characters.
+
+  ``@hi.ascii``, ``@lo.ascii``
+    Keys sorted ASCIIbetically, in the C locale (sorted purely by byte value).
+
+  ``@hi``, ``@lo``
+    The default sort, which is semantic version sort.
+
 Examples
 --------
 
 .. code-block:: bash
 
   # Start web application.
-  sssp ...
+  sssp < conf
+
+  # Start web application with some configuration provided by the environment.
+  export AWS_ACCESS_KEY_ID=...
+  export AWS_SECRET_ACCESS_KEY=...
+  sssp <<CONF
+  SSSP_BUCKET: dist
+  CONF
 
 Bugs
 ----
