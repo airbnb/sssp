@@ -93,7 +93,7 @@ createCtx map = do
     aws    <- aws <$> read "AWS_ACCESS_KEY_ID" <*> read "AWS_SECRET_ACCESS_KEY"
     s3     <- s3Configured <|> Just Aws.defaultConfiguration
     bucket <- utf8 <$> read "SSSP_BUCKET"
-    Just Ctx{bucket=bucket, aws=aws, s3=s3, manager=manager}
+    Just Ctx{bucket=bucket, aws=aws, s3=s3{Aws.s3UseUri=True}, manager=manager}
  where
   read k       = Map.lookup k map
   aws id key   = Aws.Configuration { Aws.timeInfo = Aws.Timestamp
