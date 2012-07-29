@@ -49,12 +49,16 @@ wai ctx@Ctx{..} req@WWW.Request{..} = do
     task <- resolved
     Just $ case task of
       Redirect t -> do
-        i <- liftIO $ sigData 10
+        let signFor = 10
+        sigInfo <- liftIO $ sigData signFor
         let q = Aws.getObject bucket t Aws.s3ErrorResponseConsumer
-            s = Aws.queryToUri (Aws.signQuery q s3 i)
+            s = Aws.queryToUri (Aws.signQuery q s3 sigInfo)
             b = Blaze.fromByteString (s `Bytes.snoc` '\n')
-        return $ WWW.ResponseBuilder
-          status307 [("Content-Type", "text/plain"),("Location", s)] b
+            m = "max-age=" ++ show (floor signFor :: Integer)
+            headers = [("Cache-Control", Bytes.pack m)
+                      ,("Content-Type", "text/plain")
+                      ,("Location", s)]
+        return $ WWW.ResponseBuilder status307 headers b
       Listing ts -> do
         return $ WWW.ResponseBuilder
           HTTP.status200 [("Content-Type", "text/plain")]
