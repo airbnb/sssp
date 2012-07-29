@@ -53,7 +53,7 @@ wai ctx@Ctx{..} req@WWW.Request{..} = do
         n <- case [ toSignTime v | (k, Just v) <- queryString, k == "t" ] of
                [              ] -> return 10
                Just seconds : _ -> return seconds
-               Nothing      : _ -> return 10 -- TODO: Bad param message.
+               Nothing      : _ -> return 2 -- TODO: Bad param message.
         sigInfo <- liftIO $ sigData (fromIntegral n)
         let q = Aws.getObject bucket t Aws.s3ErrorResponseConsumer
             s = Aws.queryToUri (Aws.signQuery q s3 sigInfo)
