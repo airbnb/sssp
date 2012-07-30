@@ -4,8 +4,6 @@ module Aws.SSSP.App where
 
 import           Control.Applicative
 import qualified Data.ByteString.Char8 as Bytes
-import           Data.Map (Map)
-import qualified Data.Map as Map
 import           Data.Monoid
 import           System.Environment
 import           System.Exit

@@ -1,9 +1,7 @@
 {-# LANGUAGE OverloadedStrings
-           , GADTs
            , ParallelListComp
            , RecordWildCards
            , StandaloneDeriving
-           , ExistentialQuantification
            , PatternGuards
   #-}
 module Aws.SSSP where
@@ -21,7 +19,6 @@ import           Data.Monoid
 import           Data.Ord
 import qualified Data.Set as Set
 import           Data.Word
-import           System.IO
 
 import qualified Aws as Aws
 import qualified Aws.Core as Aws
@@ -32,14 +29,11 @@ import           Data.Attempt
 import           Data.Attoparsec.Text (Parser)
 import qualified Data.Attoparsec.Text as Atto
 import qualified Data.Conduit as Conduit
-import qualified Data.Enumerator.List as Enumerator
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Read as Text
 import qualified Network.Wai as WWW
-import qualified Network.Wai.Handler.Warp as WWW
 import qualified Network.HTTP.Conduit as Conduit
-import           Network.HTTP.Types (StdMethod(..))
 import qualified Network.HTTP.Types as HTTP
 
 
