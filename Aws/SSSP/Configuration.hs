@@ -57,9 +57,14 @@ line  = optional (string "export") *> skipSpace *> do
 
 fromEnvAndSTDIN = do
   env    <- fromEnv
-  prune <$> do go <- hReady stdin
+  prune <$> do go <- checkForInput
                if go then (`Map.union` env) . fromBytes <$> Bytes.getContents
                      else return env
+ where
+  checkForInput = catchJust ((>> Just ()) . guard . isEOFError)
+                            (hReady stdin)
+                            (const (return False))
+
 
 conf :: IO (Either (Map ByteString ByteString) (Ctx, WWW.Settings))
 conf  = do
