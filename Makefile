@@ -4,10 +4,13 @@ README: doc/index.rst
 	  sed -n '/SYNOPSIS/,/AUTHOR/ { /AUTHOR/d ; p ;}' > ./README
 
 sssp: sssp.hs
-	ghc -outputdir ./tmp --make -O2 ./sssp.hs -o sssp
+	ghc -outputdir ./tmp --make -O2 ./$< -o $@
 	strip sssp
 
+sssp.prof: sssp.hs
+	ghc -outputdir ./tmp --make -rtsopts -prof -auto-all ./$< -o $@
+
 clean:
-	rm -rf tmp sssp
+	rm -rf tmp sssp sssp.prof
 	( cd ./doc/ && make clean )
 

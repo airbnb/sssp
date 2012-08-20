@@ -1,0 +1,43 @@
+#!/bin/bash
+set -o errexit -o nounset -o pipefail
+
+
+megs=1
+function test_weight {
+  if ! [[ -s ./"$megs"M ]]
+  then
+    msg "Creating ${megs}M random data file for testing."
+    dd of="$megs"M if=/dev/urandom bs=$((1024 * 1024)) count="$megs"
+  fi
+  echo "$megs"M
+}
+
+function put {
+  local target="$sssp/profiling/$1"
+  msg PUT "$1  >>>  $target"
+  curl -sSf -w '%{http_code} %{time_total}s %{size_upload}B\n' \
+       -X PUT -H "Content-Type: application/octet-stream" \
+       --data-binary @"$1" "$target" 1>&2
+}
+
+sssp=
+function start_sssp {
+  local url=http://localhost:9100
+  msg "Starting local sssp on $url using credentials in environment."
+  export SSSP_CONN=127.0.0.1:9100
+  sssp.prof +RTS "$@" -RTS &
+  trap "msg Shutting down sssp ; kill $!" HUP INT QUIT BUS SEGV PIPE TERM EXIT
+  sssp="$url"
+}
+
+function prof {
+  start_sssp "$@"
+  put "$(test_weight)"
+}
+
+function msg { out "$*" 1>&2 ;}
+function err { msg "$*" ; exit 1 ;}
+function out { printf '%s\n' "$*" ;}
+
+"$@"
+
