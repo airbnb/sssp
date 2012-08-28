@@ -8,7 +8,6 @@ module Aws.SSSP where
 
 import           Control.Applicative
 import           Control.Monad
-import           Control.Monad.Trans
 import           Data.Char
 import           Data.Either
 import           Data.ByteString (ByteString)
@@ -25,6 +24,8 @@ import qualified Aws.Core as Aws
 import qualified Aws.S3 as Aws
 import qualified Blaze.ByteString.Builder as Blaze
 import qualified Blaze.ByteString.Builder.Char.Utf8 as Blaze
+import           Control.Monad.Trans
+import           Control.Monad.Trans.Control
 import           Data.Attempt
 import           Data.Attoparsec.Text (Parser)
 import qualified Data.Attoparsec.Text as Atto
@@ -43,7 +44,7 @@ wai ctx@Ctx{..} req@WWW.Request{..} = do
   maybe (return badTask) id $ do
     task <- resolved
     Just $ case task of
-      Redirect t -> do
+      Retrieve t -> do
         maybe (return badTime) id $ do
           seconds <- timeParam
           Just $ do
@@ -55,7 +56,14 @@ wai ctx@Ctx{..} req@WWW.Request{..} = do
                 headers = [("Cache-Control", Bytes.pack m)
                           ,("Content-Type", "text/plain")
                           ,("Location", s)]
-            return $ WWW.ResponseBuilder status307 headers b
+            if direct
+              then do
+                request <- liftIO $ Conduit.parseUrl (Bytes.unpack s)
+                Conduit.Response s _ h src <- Conduit.http request manager
+                (src', finalizer) <- Conduit.unwrapResumable src
+                return $ WWW.ResponseSource s h src'
+              else
+                return $ WWW.ResponseBuilder status307 headers b
       Listing ts -> do
         return $ WWW.ResponseBuilder
           HTTP.status200 [("Content-Type", "text/plain")]
@@ -106,18 +114,19 @@ wai ctx@Ctx{..} req@WWW.Request{..} = do
     f  = (validate =<<) . (fst <$>) . listToMaybe . reads . Bytes.unpack
     validate i   = guard (notTooMany i) >> Just i
     notTooMany i = i >= 2 && i <= 40000000 -- About 16 months
+  direct = and [ True | (k, _) <- queryString, k == "direct" ]
 
 task :: Ctx -> HTTP.Method -> Resource -> IO (Maybe Task)
 task ctx method resource = do
   urls                  <- fromAttempt <$> resolve ctx resource
   return $ case (method, resource) of
-    ("GET", Singular _) -> Redirect <$> (listToMaybe =<< urls)
+    ("GET", Singular _) -> Retrieve <$> (listToMaybe =<< urls)
     ("GET", Plural   _) -> Listing  <$> urls
     ("DELETE", _)       -> Remove   <$> urls
     ("PUT", Singular _) -> Write    <$> (listToMaybe =<< urls)
     _                   -> Nothing
 
-data Task = Redirect Text
+data Task = Retrieve Text
           | Listing [Text]
           | Remove [Text]
           | Write Text -- (Conduit.RequestBody IO)
