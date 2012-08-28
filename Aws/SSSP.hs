@@ -44,19 +44,18 @@ wai ctx@Ctx{..} req@WWW.Request{..} = do
     task <- resolved
     Just $ case task of
       Redirect t -> do
-        n <- case [ toSignTime v | (k, Just v) <- queryString, k == "t" ] of
-               [              ] -> return 10
-               Just seconds : _ -> return seconds
-               Nothing      : _ -> return 2 -- TODO: Bad param message.
-        sigInfo <- liftIO $ sigData (fromIntegral n)
-        let q = Aws.getObject bucket t Aws.s3ErrorResponseConsumer
-            s = Aws.queryToUri (Aws.signQuery q s3 sigInfo)
-            b = Blaze.fromByteString (s `Bytes.snoc` '\n')
-            m = "max-age=" ++ show (n - 1)
-            headers = [("Cache-Control", Bytes.pack m)
-                      ,("Content-Type", "text/plain")
-                      ,("Location", s)]
-        return $ WWW.ResponseBuilder status307 headers b
+        maybe (return badTime) id $ do
+          seconds <- timeParam
+          Just $ do
+            sigInfo <- liftIO $ sigData (fromIntegral seconds)
+            let q = Aws.getObject bucket t Aws.s3ErrorResponseConsumer
+                s = Aws.queryToUri (Aws.signQuery q s3 sigInfo)
+                b = Blaze.fromByteString (s `Bytes.snoc` '\n')
+                m = "max-age=" ++ show (seconds - 1)
+                headers = [("Cache-Control", Bytes.pack m)
+                          ,("Content-Type", "text/plain")
+                          ,("Location", s)]
+            return $ WWW.ResponseBuilder status307 headers b
       Listing ts -> do
         return $ WWW.ResponseBuilder
           HTTP.status200 [("Content-Type", "text/plain")]
@@ -95,25 +94,28 @@ wai ctx@Ctx{..} req@WWW.Request{..} = do
   noLength = WWW.ResponseBuilder
     HTTP.status400 [("Content-Type", "text/plain")]
                    (Blaze.fromByteString "No Content-Length header.\n")
+  badTime = WWW.ResponseBuilder
+    HTTP.status400 [("Content-Type", "text/plain")]
+                   (Blaze.fromByteString "Give time as t=2..40000000\n")
   blazeBody len = Conduit.RequestBodySource len
                 . Conduit.mapOutput (Blaze.fromByteString) $ requestBody
-  toSignTime :: ByteString -> Maybe Integer
-  toSignTime  = (validate =<<) . (fst <$>) . listToMaybe . reads . Bytes.unpack
+  timeParam  =  (maybe 10 id . listToMaybe)
+            <$> sequence [ f v | (k, Just v) <- queryString, k == "t" ]
    where
+    f :: ByteString -> Maybe Integer
+    f  = (validate =<<) . (fst <$>) . listToMaybe . reads . Bytes.unpack
     validate i   = guard (notTooMany i) >> Just i
-    notTooMany i = i >= 2 && i <= 10000000 -- 4 months
+    notTooMany i = i >= 2 && i <= 40000000 -- About 16 months
 
 task :: Ctx -> HTTP.Method -> Resource -> IO (Maybe Task)
-task ctx m r
-  | "GET"    <- m, Singular _ <- r = (Redirect <$>) . (listToMaybe =<<)
-                                  <$> resolved
-  | "GET"    <- m, Plural   _ <- r = (Listing <$>) <$> resolved
-  | "DELETE" <- m                  = (Remove <$>) <$> resolved
-  | "PUT"    <- m, Singular _ <- r = (Write <$>) . (listToMaybe =<<)
-                                  <$> resolved
-  | otherwise                      = return Nothing
- where
-  resolved = fromAttempt <$> resolve ctx r
+task ctx method resource = do
+  urls                  <- fromAttempt <$> resolve ctx resource
+  return $ case (method, resource) of
+    ("GET", Singular _) -> Redirect <$> (listToMaybe =<< urls)
+    ("GET", Plural   _) -> Listing  <$> urls
+    ("DELETE", _)       -> Remove   <$> urls
+    ("PUT", Singular _) -> Write    <$> (listToMaybe =<< urls)
+    _                   -> Nothing
 
 data Task = Redirect Text
           | Listing [Text]
