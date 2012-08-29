@@ -104,7 +104,7 @@ wai ctx@Ctx{..} req@WWW.Request{..} = do
     HTTP.status400 [("Content-Type", "text/plain")]
                    (Blaze.fromByteString "Give time as t=2..40000000\n")
   blazeBody len = Conduit.RequestBodySource len
-                . Conduit.mapOutput (Blaze.fromByteString) $ requestBody
+                . Conduit.mapOutput Blaze.fromByteString $ requestBody
   timeParam  =  (maybe 10 id . listToMaybe)
             <$> sequence [ f v | (k, Just v) <- queryString, k == "t" ]
    where
