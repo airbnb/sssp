@@ -29,13 +29,17 @@ import           Control.Monad.Trans.Control
 import           Data.Attempt
 import           Data.Attoparsec.Text (Parser)
 import qualified Data.Attoparsec.Text as Atto
+import           Data.Conduit (($=))
 import qualified Data.Conduit as Conduit
+import qualified Data.Conduit.List as Conduit
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Read as Text
 import qualified Network.Wai as WWW
 import qualified Network.HTTP.Conduit as Conduit
 import qualified Network.HTTP.Types as HTTP
+
+import qualified Aws.SSSP.WWW as WWW
 
 
 wai :: Ctx -> WWW.Application
@@ -56,14 +60,8 @@ wai ctx@Ctx{..} req@WWW.Request{..} = do
                 headers = [("Cache-Control", Bytes.pack m)
                           ,("Content-Type", "text/plain")
                           ,("Location", s)]
-            if direct
-              then do
-                request <- liftIO $ Conduit.parseUrl (Bytes.unpack s)
-                Conduit.Response s _ h src <- Conduit.http request manager
-                (src', finalizer) <- Conduit.unwrapResumable src
-                return $ WWW.ResponseSource s h src'
-              else
-                return $ WWW.ResponseBuilder status307 headers b
+            if direct then WWW.proxied manager (Bytes.unpack s)
+                      else return $ WWW.ResponseBuilder status307 headers b
       Listing ts -> do
         return $ WWW.ResponseBuilder
           HTTP.status200 [("Content-Type", "text/plain")]
