@@ -112,7 +112,7 @@ wai ctx@Ctx{..} req@WWW.Request{..} = do
     f  = (validate =<<) . (fst <$>) . listToMaybe . reads . Bytes.unpack
     validate i   = guard (notTooMany i) >> Just i
     notTooMany i = i >= 2 && i <= 40000000 -- About 16 months
-  direct = and [ True | (k, _) <- queryString, k == "direct" ]
+  direct = any ((=="direct") . fst) queryString
 
 task :: Ctx -> HTTP.Method -> Resource -> IO (Maybe Task)
 task ctx method resource = do
