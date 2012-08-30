@@ -1,14 +1,21 @@
 -- | Helper functions for writing the web server.
 module Aws.SSSP.WWW where
 
+import           Control.Applicative
 import           Data.ByteString (ByteString)
+import qualified Data.ByteString.Char8 as ByteString
 
+import qualified Aws.S3 as Aws
 import qualified Blaze.ByteString.Builder as Blaze
 import           Control.Monad.Trans
+import qualified Data.CaseInsensitive as CI
 import           Data.Conduit (($=))
 import qualified Data.Conduit as Conduit
 import qualified Data.Conduit.List as Conduit
+import qualified Data.Text.Encoding as Text
+import qualified Data.Text.Encoding.Error as Text
 import qualified Network.HTTP.Conduit as Conduit
+import qualified Network.HTTP.Types as HTTP
 import qualified Network.Wai as Wai
 
 
@@ -27,3 +34,21 @@ reSource resumable     = do
 b2b :: (Monad m) => Conduit.Conduit ByteString m (Conduit.Flush Blaze.Builder)
 b2b  = Conduit.map (Conduit.Chunk . Blaze.fromByteString)
 
+addHeaders :: Aws.PutObject -> HTTP.RequestHeaders -> Aws.PutObject
+addHeaders po headers = po{ Aws.poMetadata = t' <$> headers }
+ where
+  add po (k, v)
+    | "Content-Type" == k        = po{ Aws.poContentType=v }
+    | "Cache-Control" == k       = po{ Aws.poCacheControl=v }
+    | "Content-Disposition" == k = po{ Aws.poContentDisposition=v }
+    | "Content-Encoding" == k    = po{ Aws.poContentEncoding=v }
+    | "Content-MD5" == k         = po{ Aws.poContentMD5=v }
+    | "Expires" == k             = po{ Aws.poExpires=v }
+    | "x-amz-acl" == k           = po{ Aws.poAcl=v }
+    | "x-amz-storage-class" == k = po{ Aws.poStorageClass=v }
+    | clip k /= k                = po{ ... }
+    | otherwise                  = po
+  clip | "x-amz-" `Bytes.isPrefixOf` s = Bytes.drop (Bytes.length "x-amz-") k
+       | otherwise                     = k
+  t = Text.decodeUtf8With Text.ignore
+  t' (k, v) = (t (CI.original k), t v)

@@ -84,7 +84,8 @@ wai ctx@Ctx{..} req@WWW.Request{..} = do
                   | (k, v) <- requestHeaders, k == "Content-Length" ]
         maybe (return noLength) id $ do
           n <- len
-          let po = Aws.putObject bucket t (blazeBody n)
+          let po = WWW.addHeaders requestHeaders
+                 $ Aws.putObject bucket t (blazeBody n)
           Just $ do
             Aws.Response _meta attempt <- Aws.aws aws s3 manager po
             let status | isSuccess attempt = HTTP.status200
