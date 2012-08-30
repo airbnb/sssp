@@ -18,10 +18,6 @@ proxied manager string        = do
   Conduit.Response s _ h src <- Conduit.http request manager
   src                        <- reSource src
   return $ Wai.ResponseSource s h (src $= b2b)
---              request <- liftIO $ Conduit.parseUrl (Bytes.unpack s)
---              Conduit.Response s _ h src <- Conduit.http request manager
---              (src', finalizer) <- Conduit.unwrapResumable src
---              return $ WWW.ResponseSource s h src'
 
 reSource :: MonadIO m => Conduit.ResumableSource m o -> m (Conduit.Source m o)
 reSource resumable     = do
