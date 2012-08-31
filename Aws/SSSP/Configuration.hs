@@ -100,7 +100,7 @@ createSettings map = do
 
 createCtx :: Map ByteString ByteString -> IO (Maybe Ctx)
 createCtx map = do
-  manager <- Conduit.newManager def
+  manager <- Conduit.newManager def{ Conduit.managerConnCount=1024 }
   return $ do
     aws    <- aws <$> (read "AWS_ACCESS_KEY" <|> read "AWS_ACCESS_KEY_ID")
                   <*> (read "AWS_SECRET_KEY" <|> read "AWS_SECRET_ACCESS_KEY")
