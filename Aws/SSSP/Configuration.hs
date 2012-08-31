@@ -30,9 +30,9 @@ import qualified Network.Wai.Handler.Warp as WWW
 import Aws.SSSP (Ctx(..))
 
 
-variables =
-  [ "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION", "SSSP_BUCKET",
-    "SSSP_CONN", "PORT" ]
+variables = [ "AWS_ACCESS_KEY",    "AWS_SECRET_KEY",
+              "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY",
+              "AWS_REGION",        "SSSP_BUCKET", "SSSP_CONN", "PORT" ]
 
 fromEnv :: IO (Map ByteString ByteString)
 fromEnv  = Map.fromList . catMaybes <$> mapM paired variables
@@ -48,12 +48,19 @@ fromBytes :: ByteString -> Map ByteString ByteString
 fromBytes bytes = Map.fromList
   [ (k, v) | Right (k, v) <- parseOnly line <$> Bytes.lines bytes ]
 
+-- | Recognizes a parseable @k = v@ or @k: v@ style line. It's relatively
+--   flexible on input but rejects lines that might have shell interpolations
+--   in them -- lines containing one of @$`{}@ -- as well as lines with shell
+--   quotes (@'"@). This allows the file input parser to skip over such values
+--   when a raw rc file is loaded.
 line :: Parser (ByteString, ByteString)
 line  = optional (string "export") *> skipSpace *> do
-        (,) <$> choice (string <$> variables)
-            <*> (skipWhile (inClass " :=") *> chopped)
+        (,) <$> choice (string <$> variables) <*> (copula *> chopped)
  where
-  chopped = fst . Bytes.spanEnd isSpace <$> takeTill (inClass "\n\r")
+  copula = skipWhile (==' ') *> (char '=' <|> char ':') <* skipWhile (==' ')
+  chopped = simple =<< fst . Bytes.spanEnd isSpace
+                   <$> takeWhile1 (notInClass "\n\r")
+  simple s = guard (and [ Bytes.notElem c s | c <- "${}`\"'" ]) >> return s
 
 fromEnvAndSTDIN = do
   env    <- fromEnv
@@ -95,7 +102,8 @@ createCtx :: Map ByteString ByteString -> IO (Maybe Ctx)
 createCtx map = do
   manager <- Conduit.newManager def
   return $ do
-    aws    <- aws <$> read "AWS_ACCESS_KEY_ID" <*> read "AWS_SECRET_ACCESS_KEY"
+    aws    <- aws <$> (read "AWS_ACCESS_KEY" <|> read "AWS_ACCESS_KEY_ID")
+                  <*> (read "AWS_SECRET_KEY" <|> read "AWS_SECRET_ACCESS_KEY")
     s3     <- s3Configured <|> Just Aws.defaultConfiguration
     bucket <- utf8 <$> read "SSSP_BUCKET"
     Just Ctx{bucket=bucket, aws=aws, s3=s3{Aws.s3UseUri=True}, manager=manager}

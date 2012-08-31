@@ -21,10 +21,13 @@ DESCRIPTION
 
 CONFIGURATION
        These settings can be passed as environment variables  or  fed  to  the
-       server on STDIN in colon separated format.
+       server  on  STDIN in colon separated format. Both the new and old forms
+       of the AWS credential environment variables are supported.
 
        # AWS Settings
+       AWS_ACCESS_KEY              = account access key
        AWS_ACCESS_KEY_ID           = account access key
+       AWS_SECRET_KEY              = secret
        AWS_SECRET_ACCESS_KEY       = secret
        AWS_REGION                  = eu-west-1, classic, us-east-1, ...
 
@@ -35,14 +38,15 @@ CONFIGURATION
        SSSP_CONN                   = <ip>:<port> pair
        PORT                        = port to connect to, on localhost
 
-       SSSP  is  fairly  liberal when parsing STDIN. In fact, Bourne shell .rc
+       SSSP is fairly liberal when parsing STDIN. In fact,  Bourne  shell  .rc
        files, like the follow example, are parsed without error:
 
        export SSSP_BUCKET=dist
        export SSSP_CONN=*:6000
 
-       However, SSSP does not parse shell quotes (which  one  is  unlikely  to
-       need for the kinds of values involved, given their rigid formats).
+       However,  SSSP skips over lines that contain quotes ("') or that appear
+       to require shell interpolation for their correct  interpolation  (lines
+       containing $`{}).
 
 REST INTERFACE
        URLs  in  SSSP point to one of two objects: an item or a listing. Items
