@@ -32,12 +32,15 @@ Configuration
 -------------
 
 These settings can be passed as environment variables or fed to the server on
-STDIN in colon separated format.
+STDIN in colon separated format. Both the new and old forms of the
+AWS credential environment variables are supported.
 
 .. code-block:: bash
 
   # AWS Settings
+  AWS_ACCESS_KEY              = account access key
   AWS_ACCESS_KEY_ID           = account access key
+  AWS_SECRET_KEY              = secret
   AWS_SECRET_ACCESS_KEY       = secret
   AWS_REGION                  = eu-west-1, classic, us-east-1, ...
 
@@ -56,8 +59,9 @@ like the follow example, are parsed without error:
   export SSSP_BUCKET=dist
   export SSSP_CONN=*:6000
 
-However, SSSP does not parse shell quotes (which one is unlikely to need for
-the kinds of values involved, given their rigid formats).
+However, SSSP skips over lines that contain quotes (``"'``) or that
+appear to require shell interpolation for their correct interpolation (lines
+containing ``$`{}``).
 
 REST Interface
 --------------
