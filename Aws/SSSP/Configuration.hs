@@ -51,7 +51,7 @@ fromBytes bytes = Map.fromList
 -- | Recognizes a parseable @k = v@ or @k: v@ style line. It's relatively
 --   flexible on input but rejects lines that might have shell interpolations
 --   in them -- lines containing one of @$`{}@ -- as well as lines with shell
---   quotes (@'"@). This allows the file input parser to skip over such values
+--   quotes (@'\"@). This allows the file input parser to skip over such values
 --   when a raw rc file is loaded.
 line :: Parser (ByteString, ByteString)
 line  = optional (string "export") *> skipSpace *> do

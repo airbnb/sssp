@@ -158,13 +158,13 @@ data SetWildcard = Include Word Wildcard | Exclude Word Wildcard
 --   escapes itself in leading position, in a simple way: leading runs are
 --   shortened by one character. Some examples of path components and their
 --   interpretation are helpful:
--- @
---    hi      -> The string "hi".
---    @hi     -> The hi.semver wildcard.
---    @@hi    -> The string "@hi".
---    @@@hi   -> The string "@@hi".
---    ...and so on...
--- @
+--
+-- >  hi      -> The string "hi".
+-- >  @hi     -> The hi.semver wildcard.
+-- >  @@hi    -> The string "@hi".
+-- >  @@@hi   -> The string "@@hi".
+-- >  ...and so on...
+--
 --   Sending @meta=_@ as a query parameter changes the meta-character to an
 --   underscore. The meta-character may be any single character; empty or
 --   overlong @meta@ parameters are ignored.
