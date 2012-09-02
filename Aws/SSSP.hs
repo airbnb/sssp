@@ -25,13 +25,10 @@ import qualified Aws.S3 as Aws
 import qualified Blaze.ByteString.Builder as Blaze
 import qualified Blaze.ByteString.Builder.Char.Utf8 as Blaze
 import           Control.Monad.Trans
-import           Control.Monad.Trans.Control
 import           Data.Attempt
 import           Data.Attoparsec.Text (Parser)
 import qualified Data.Attoparsec.Text as Atto
-import           Data.Conduit (($=))
 import qualified Data.Conduit as Conduit
-import qualified Data.Conduit.List as Conduit
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Read as Text
