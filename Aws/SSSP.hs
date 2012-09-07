@@ -81,14 +81,20 @@ wai ctx@Ctx{..} req@WWW.Request{..} = do
                   | (k, v) <- requestHeaders, k == "Content-Length" ]
         maybe (return noLength) id $ do
           n <- len
-          let po = Aws.putObject bucket t (blazeBody n)
-          Just $ do
-            Aws.Response _meta attempt <- Aws.aws aws s3 manager po
-            let status | isSuccess attempt = HTTP.status200
-                       | otherwise         = HTTP.status500
-            return $ WWW.ResponseBuilder
-              status [("Content-Type", "text/plain")] mempty
+          Just . maybe (return badTime) id $ do
+            seconds <- timeParam
+            Just $ do
+              sigInfo <- liftIO $ sigData (fromIntegral seconds)
+              let q = Aws.putObject bucket t (blazeBody n)
+                  s = Aws.queryToUri (Aws.signQuery q s3 sigInfo)
+                  b = Blaze.fromByteString (s `Bytes.snoc` '\n')
+                  m = "max-age=" ++ show (defaultSeconds - 1)
+                  headers = [("Cache-Control", Bytes.pack m)
+                            ,("Content-Type", "text/plain")
+                            ,("Location", s)]
+              return $ WWW.ResponseBuilder status307 headers b
  where
+  defaultSeconds = 10
   status307 = HTTP.Status 307 "Temporary Redirect"
   sigData n = Aws.signatureData (Aws.ExpiresIn n) (Aws.credentials aws)
   badTask = WWW.ResponseBuilder
@@ -102,7 +108,7 @@ wai ctx@Ctx{..} req@WWW.Request{..} = do
                    (Blaze.fromByteString "Give time as t=2..40000000\n")
   blazeBody len = Conduit.RequestBodySource len
                 . Conduit.mapOutput Blaze.fromByteString $ requestBody
-  timeParam  =  (maybe 10 id . listToMaybe)
+  timeParam  =  (maybe defaultSeconds id . listToMaybe)
             <$> sequence [ f v | (k, Just v) <- queryString, k == "t" ]
    where
     f :: ByteString -> Maybe Integer
