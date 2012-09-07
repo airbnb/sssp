@@ -86,7 +86,8 @@ wai ctx@Ctx{..} req@WWW.Request{..} = do
             Just $ do
               sigInfo <- liftIO $ sigData (fromIntegral seconds)
               let q = Aws.putObject bucket t (blazeBody n)
-                  s = Aws.queryToUri (Aws.signQuery q s3 sigInfo)
+                  r = WWW.addHeaders q requestHeaders
+                  s = Aws.queryToUri (Aws.signQuery r s3 sigInfo)
                   b = Blaze.fromByteString (s `Bytes.snoc` '\n')
                   m = "max-age=" ++ show (defaultSeconds - 1)
                   headers = [("Cache-Control", Bytes.pack m)
