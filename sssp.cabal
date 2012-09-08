@@ -34,8 +34,9 @@ library
                               , containers
                               , attempt >= 0.4
                               , attoparsec >= 0.10
-                              , aws >= 0.6
+                              , aws >= 0.7 && < 0.8
                               , blaze-builder >= 0.3
+                              , case-insensitive >= 0.4
                               , conduit >= 0.5
                               , data-default >= 0.4
                               , http-conduit >= 1.5
@@ -71,8 +72,9 @@ executable                      sssp
                               , containers
                               , attempt >= 0.4
                               , attoparsec >= 0.10
-                              , aws >= 0.6
+                              , aws >= 0.7 && < 0.8
                               , blaze-builder >= 0.3
+                              , case-insensitive >= 0.4
                               , conduit >= 0.5
                               , data-default >= 0.4
                               , http-conduit >= 1.5

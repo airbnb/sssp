@@ -104,7 +104,7 @@ createCtx map = do
   return $ do
     aws    <- aws <$> (read "AWS_ACCESS_KEY" <|> read "AWS_ACCESS_KEY_ID")
                   <*> (read "AWS_SECRET_KEY" <|> read "AWS_SECRET_ACCESS_KEY")
-    s3     <- s3Configured <|> Just Aws.defaultConfiguration
+    s3     <- s3Configured <|> Just defS3
     bucket <- utf8 <$> read "SSSP_BUCKET"
     Just Ctx{bucket=bucket, aws=aws, s3=s3{Aws.s3UseUri=True}, manager=manager}
  where
@@ -112,10 +112,12 @@ createCtx map = do
   aws id key   = Aws.Configuration { Aws.timeInfo = Aws.Timestamp
                                    , Aws.credentials = Aws.Credentials id key
                                    , Aws.logger = Aws.defaultLog Aws.Warning }
+  s3Configured :: Maybe (Aws.S3Configuration Aws.NormalQuery)
   s3Configured = do region <- read "AWS_REGION"
                     url    <- endpoint region
-                    Just Aws.defaultConfiguration{Aws.s3Endpoint=url}
+                    Just defS3{Aws.s3Endpoint=url}
   utf8 = Text.decodeUtf8With Text.lenientDecode
+  defS3 = Aws.defServiceConfig :: Aws.S3Configuration Aws.NormalQuery
 
 validate :: ByteString -> ByteString -> Maybe ByteString
 validate "AWS_REGION" r = endpoint r

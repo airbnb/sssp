@@ -41,7 +41,7 @@ import qualified Aws.SSSP.WWW as WWW
 
 wai :: Ctx -> WWW.Application
 wai ctx@Ctx{..} req@WWW.Request{..} = do
-  resolved <- liftIO $ task ctx requestMethod (resource req)
+  resolved <- task ctx requestMethod (resource req)
   maybe (return badTask) id $ do
     task <- resolved
     Just $ case task of
@@ -50,7 +50,7 @@ wai ctx@Ctx{..} req@WWW.Request{..} = do
           seconds <- timeParam
           Just $ do
             sigInfo <- liftIO $ sigData (fromIntegral seconds)
-            let q = Aws.getObject bucket t Aws.s3ErrorResponseConsumer
+            let q = Aws.getObject bucket t
                 s = Aws.queryToUri (Aws.signQuery q s3 sigInfo)
                 b = Blaze.fromByteString (s `Bytes.snoc` '\n')
                 m = "max-age=" ++ show (seconds - 1)
@@ -118,7 +118,7 @@ wai ctx@Ctx{..} req@WWW.Request{..} = do
     notTooMany i = i >= 2 && i <= 40000000 -- About 16 months
   direct = any ((=="direct") . fst) queryString
 
-task :: Ctx -> HTTP.Method -> Resource -> IO (Maybe Task)
+task :: Ctx -> HTTP.Method -> Resource -> Conduit.ResourceT IO (Maybe Task)
 task ctx method resource = do
   urls                  <- fromAttempt <$> resolve ctx resource
   return $ case (method, resource) of
@@ -145,7 +145,7 @@ data Resource = Singular [Either Text Wildcard]
 
 data Ctx = Ctx { bucket :: Aws.Bucket
                , aws :: Aws.Configuration
-               , s3 :: Aws.S3Configuration
+               , s3 :: Aws.S3Configuration Aws.NormalQuery
                , manager :: Conduit.Manager }
 instance Show Ctx where
   show Ctx{..} = mconcat [ "Ctx { bucket=", show bucket
@@ -239,7 +239,7 @@ wildcards = [( "hi.ascii", Hi ASCII)  ,( "lo.ascii", Lo ASCII)
 -- | Translate a resource in to a listing of objects. While intermediate S3
 --   prefixes (directories) are traversed, the final match is always on keys
 --   for objects.
-resolve :: Ctx -> Resource -> IO (Attempt [Text])
+resolve :: Ctx -> Resource -> Conduit.ResourceT IO (Attempt [Text])
 resolve Ctx{..} res = case res of
   Plural [ ]          -> (fst <$>) <$> listing Ctx{..} ""
   Plural components   -> resolve' "" (simplify <$> components)
@@ -250,7 +250,6 @@ resolve Ctx{..} res = case res of
   simplify :: Either (Either Text Wildcard) SetWildcard
            -> Either Text SetWildcard
   simplify = either pluralize Right
-  resolve' :: Text -> [Either Text SetWildcard] -> IO (Attempt [Text])
   resolve' prefix [   ] = return (Success [prefix])
   resolve' prefix (h:t) = case h of
     Left ""   -> (fst <$>) <$> listing Ctx{..} prefix
@@ -265,7 +264,7 @@ resolve Ctx{..} res = case res of
       names (objects, prefixes) = expand set $ case t of [ ] -> objects
                                                          _:_ -> prefixes
 
-listing :: Ctx -> Text -> IO (Attempt ([Text],[Text]))
+listing :: Ctx -> Text -> Conduit.ResourceT IO (Attempt ([Text],[Text]))
 listing Ctx{..} prefix = do
   -- For now, we don't do any results paging, limiting ourselves to the
   -- first thousand results, as per the Amazon maximums.
