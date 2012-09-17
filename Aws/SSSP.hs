@@ -7,6 +7,7 @@
 module Aws.SSSP where
 
 import           Control.Applicative
+import           Control.Arrow ((***))
 import           Control.Monad
 import           Data.Char
 import           Data.Either
@@ -265,18 +266,22 @@ resolve Ctx{..} res = case res of
                                                          _:_ -> prefixes
 
 listing :: Ctx -> Text -> Conduit.ResourceT IO (Attempt ([Text],[Text]))
-listing Ctx{..} prefix = do
-  -- For now, we don't do any results paging, limiting ourselves to the
-  -- first thousand results, as per the Amazon maximums.
-  Aws.Response _meta attempt <- Aws.aws aws s3 manager gb
-  return $ do
-    Aws.GetBucketResponse{..} <- attempt
-    Success (Aws.objectKey <$> gbrContents, gbrCommonPrefixes)
+listing Ctx{..} prefix =
+  ((concat *** concat) . unzip <$>) <$> listing' Nothing []
  where
+  listing' mark acc = do
+    Aws.Response _meta attempt <- Aws.aws aws s3 manager gb{Aws.gbMarker=mark}
+    case attempt of
+      Success Aws.GetBucketResponse{..} -> do
+        let (keys, pres) = (Aws.objectKey <$> gbrContents, gbrCommonPrefixes)
+        if length keys < 1000 -- TODO: Use truncation flag.
+          then  (return . Success . reverse) ((keys, pres):acc)
+          else  listing' (Just (last keys))  ((keys, pres):acc)
+      Failure e -> return (Failure e)
   gb = Aws.GetBucket { Aws.gbBucket = bucket
                      , Aws.gbPrefix = Just (prefix -/- "")
                      , Aws.gbDelimiter = Just "/"
-                     , Aws.gbMaxKeys = Nothing
+                     , Aws.gbMaxKeys = Just 1000 -- The Amazon maximum.
                      , Aws.gbMarker = Nothing }
 
 expand :: SetWildcard -> [Text] -> [Text]
