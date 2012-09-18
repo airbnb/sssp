@@ -5,7 +5,7 @@ license                       : BSD3
 license-file                  : LICENSE
 author                        : Jason Dusek
 maintainer                    : oss@solidsnack.be
-homepage                      : http://github.com/airbnb/sssp/
+homepage                      : http://github.com/erudify/sssp/
 synopsis                      : HTTP proxy for S3.
 description                   :
   An HTTP proxy for S3 that generates signed URLs for GETs and proxies PUTs
