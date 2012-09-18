@@ -8,9 +8,9 @@ maintainer                    : oss@solidsnack.be
 homepage                      : http://github.com/erudify/sssp/
 synopsis                      : HTTP proxy for S3.
 description                   :
-  An HTTP proxy for S3 that generates signed URLs for GETs and proxies PUTs
-  and DELETEs. Range queries, using semantic version sort and ASCII set, are
-  supported. 
+  An HTTP proxy for S3 that generates signed URLs for GETs and PUTs and
+  proxies DELETEs. A very limited form of range queries, using semantic
+  version sort and ASCII set, are supported.
 
 cabal-version                 : >= 1.10
 build-type                    : Simple
