@@ -48,11 +48,11 @@ addHeaders = List.foldl' add
     | "Cache-Control" == k       = po{ Aws.poCacheControl       = Just (t v) }
     | "Content-Disposition" == k = po{ Aws.poContentDisposition = Just (t v) }
     | "Content-Encoding" == k    = po{ Aws.poContentEncoding    = Just (t v) }
- -- | "Content-MD5" == k         = po{ Aws.poContentMD5         = Just (m v) }
+--  | "Content-MD5" == k         = po{ Aws.poContentMD5         = Just (m v) }
     | "Expires" == k             = po{ Aws.poExpires            = Just (i v) }
- -- | "x-amz-acl" == k           = po{ Aws.poAcl                = Just (t v) }
- -- | "x-amz-storage-class" == k = po{ Aws.poStorageClass       = Just (t v) }
- -- | clip k /= k                = po{ ... }
+--  | "x-amz-acl" == k           = po{ Aws.poAcl                = Just (t v) }
+--  | "x-amz-storage-class" == k = po{ Aws.poStorageClass       = Just (t v) }
+--  | clip k /= k                = po{ ... }
     | otherwise                  = po
   -- TODO: Handle extended headers.
 --clip | "x-amz-" `Bytes.isPrefixOf` s = Bytes.drop (Bytes.length "x-amz-") k
