@@ -125,13 +125,10 @@ wildcard; the result is a listing:
   GET http://sssp.io/dist/x/@lo2  -200->  dist/x/x-0.1.1.tgz
                                           dist/x/x-0.1.4.tgz
 
-Counts are the natural numbers starting at 0.
+Counts are the natural numbers starting at 0. The wildcard ``@*`` refers to
+"all the items".
 
-..  TODO
-    The wildcard ``@*`` refers to "all the items" (``@hi*`` and ``@lo*`` are
-    equivalent so just ``@*`` is enough.)
-
-A counted wildcard, like ``@hi2``, can be suffixed with a tilde to form it's
+A counted wildcard, like ``@hi2``, can be suffixed with a tilde to form its
 complement -- so ``@hi2~`` is everything but the highest two items. This can
 be useful for bulk deletion of old/new things.
 
@@ -148,6 +145,13 @@ Wildcards
 
   ``@hi``, ``@lo``
     The default sort, which is semantic version sort.
+
+  ``@*``, ``@*.semver``, ``@*.ascii``
+    All the items, in the default order (semantic version) or in a specified
+    order.
+
+ASCII sort can be substantially more performant than semantic version sort,
+because S3 returns data in ASCII order and thus no real sorting is necessary.
 
 Examples
 --------

@@ -88,16 +88,17 @@ REST INTERFACE
        GET http://sssp.io/dist/x/@lo2  -200->  dist/x/x-0.1.1.tgz
                                                dist/x/x-0.1.4.tgz
 
-       Counts are the natural numbers starting at 0.
+       Counts are the natural numbers starting at 0. The wildcard @* refers to
+       "all the items".
 
-       A  counted  wildcard,  like  @hi2, can be suffixed with a tilde to form
-       it's complement -- so @hi2~ is everything but the  highest  two  items.
-       This can be useful for bulk deletion of old/new things.
+       A counted wildcard, like @hi2, can be suffixed with a tilde to form its
+       complement  --  so  @hi2~ is everything but the highest two items. This
+       can be useful for bulk deletion of old/new things.
 
 WILDCARDS
           @hi.semver, @lo.semver
-                 Key  with  highest or lowest version, according to a liberal-
-                 ized form of "semantic versioning", where version  components
+                 Key with highest or lowest version, according to  a  liberal-
+                 ized  form of "semantic versioning", where version components
                  are delimited by any non-digit characters.
 
           @hi.ascii, @lo.ascii
@@ -106,6 +107,14 @@ WILDCARDS
 
           @hi, @lo
                  The default sort, which is semantic version sort.
+
+          @*, @*.semver, @*.ascii
+                 All  the items, in the default order (semantic version) or in
+                 a specified order.
+
+       ASCII sort can be substantially more performant than  semantic  version
+       sort,  because  S3 returns data in ASCII order and thus no real sorting
+       is necessary.
 
 EXAMPLES
        # Start web application.
