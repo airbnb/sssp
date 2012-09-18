@@ -161,7 +161,7 @@ Examples
   # Start web application.
   sssp < conf
 
-  # Start web application with some configuration provided by the environment.
+  # Start web application with configuration provided by the environment.
   export AWS_ACCESS_KEY_ID=...
   export AWS_SECRET_ACCESS_KEY=...
   sssp <<CONF
