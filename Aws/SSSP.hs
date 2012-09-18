@@ -222,10 +222,18 @@ wildcard meta = Atto.char meta *> Atto.choice matchers
 -- | Match a wildcard set, ending with a count (if it is inclusive) or an
 --   optional count and a final tilde (if it is exclusive).
 setWildcard :: Char -> Parser SetWildcard
-setWildcard meta = wildcard meta <**> (exclude <|> include)
+setWildcard meta = star meta <|> wildcard meta <**> (exclude <|> include)
  where
   include = Include <$> Atto.decimal
   exclude = Exclude <$> Atto.option 1 Atto.decimal <* Atto.char '~'
+
+star :: Char -> Parser SetWildcard
+star meta =  Atto.char meta *> Atto.char '*'
+          *> (Exclude 0 . Lo <$> Atto.option SemVer ordering)
+ where
+  ordering :: Parser Order
+  ordering  =  (Atto.string ".ascii"  *> pure ASCII)
+           <|> (Atto.string ".semver" *> pure SemVer)
 
 -- | Wildcards and their textual representations.
 wildcards :: [(Text, Wildcard)]
@@ -285,7 +293,10 @@ listing Ctx{..} prefix =
                      , Aws.gbMarker = Nothing }
 
 expand :: SetWildcard -> [Text] -> [Text]
-expand set texts = if complement then complemented matching else matching
+expand set texts
+  | complement && count == 0 = ordered texts -- Special case for "all" wilcard.
+  | complement               = complemented matching
+  | otherwise                = matching
  where
   matching = (selected . ordered) texts
   uniq = Set.fromList texts
@@ -325,7 +336,7 @@ plusNL :: Blaze.Builder -> Blaze.Builder
 plusNL  = (`mappend` Blaze.fromChar '\n')
 
 order :: Order -> [Text] -> [Text]
-order ASCII  = List.sort
+order ASCII  = id -- Amazon returns them sorted anyways...
 order SemVer = List.sortBy (comparing textSemVer)
 
 textSemVer :: Text -> [Integer]
