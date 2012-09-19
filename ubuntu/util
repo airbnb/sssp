@@ -1,0 +1,47 @@
+#!/bin/bash
+set -o errexit -o nounset -o pipefail
+
+function shareds {
+  ldd sssp | sed -nr '/^\t[^ ]+[.][0-9]+ => ([^ ]+)( .+)?$/ { s//\1/ ; p }'
+}
+
+function debs {
+  shareds | xargs dpkg -S | sort
+}
+
+function statics {
+  debs | fgrep -v libc6 | cut -d' ' -f2 |
+  sed -nr '/^.+[/]([^/]+)[.]so([.][0-9.]+)?$/ { s//\1.a/ ; p }' |
+  while read lib
+  do
+    find /usr/lib /lib -name "$lib" | head -n1
+  done
+}
+
+function links {
+  local statics=( $(statics) )
+  local libdir="$(ghc --print-libdir)"
+  local cmd=( ln -sft )
+  if [[ ${#statics[@]} -gt 0 ]]
+  then
+    echo "Found non-libc shared objects:" >&2
+    printf '  %s\n' "${statics[@]}" >&2
+    echo "Shall I softlink them to ${libdir}, to compile a static binary?" >&2
+    select yn in yes no
+    do
+      if [[ $yn = yes ]]
+      then
+        if [[ ${1:-} = --sudo ]]
+        then
+          echo 'Using sudo to form links...' >&2
+          cmd=( sudo ln -sft )
+        fi
+        "${cmd[@]}" "$libdir" "${statics[@]}"
+      fi
+      break
+    done
+  fi
+}
+
+"$@"
+

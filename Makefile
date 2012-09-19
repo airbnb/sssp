@@ -1,4 +1,4 @@
-.PHONY: clean sssp sssp.prof
+.PHONY: clean sssp links
 
 README: doc/index.rst
 	( cd doc && make man )
@@ -6,13 +6,17 @@ README: doc/index.rst
 	  sed -n '/SYNOPSIS/,/AUTHOR/ { /AUTHOR/d ; p ;}' > ./README
 
 sssp:
-	ghc -outputdir ./tmp --make -O2 $@.hs -o $@
-	strip sssp
+	ghc -outputdir ./tmp --make -O2 -threaded $@.hs -o $@
+	strip $@
 
-sssp.prof:
-	ghc -outputdir ./tmp --make -rtsopts -prof -auto-all $@.hs -o $@
+ubuntu/sssp: sssp links ubuntu/util
+	ghc -outputdir ./ubuntu/tmp --make -O2 -threaded $<.hs -o $@
+	strip $@
+
+links: ubuntu/util
+	$< links --sudo
 
 clean:
-	rm -rf tmp sssp sssp.prof
+	rm -rf tmp ubuntu/tmp sssp ubuntu/sssp
 	( cd ./doc/ && make clean )
 
