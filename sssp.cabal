@@ -1,7 +1,6 @@
 name                          : sssp
 version                       : 1.0.0
 category                      : Text
-license                       : BSD3
 license-file                  : LICENSE
 author                        : Jason Dusek
 maintainer                    : oss@solidsnack.be
