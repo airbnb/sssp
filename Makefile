@@ -9,12 +9,13 @@ sssp:
 	ghc -outputdir ./tmp --make -O2 -threaded $@.hs -o $@
 	strip $@
 
-ubuntu/sssp: sssp links ubuntu/util
-	ghc -outputdir ./ubuntu/tmp --make -O2 -threaded $<.hs -o $@
+ubuntu/sssp: libs = $(shell ubuntu/util statics)
+ubuntu/sssp: sssp ubuntu/util
+	ghc -outputdir ./ubuntu/tmp --make -O2 -threaded $<.hs -o $@ \
+	 -optl-Wl,--whole-archive \
+	  $(libs:%=-optl%) \
+	 -optl-Wl,--no-whole-archive
 	strip $@
-
-links: ubuntu/util
-	$< links --sudo
 
 clean:
 	rm -rf tmp ubuntu/tmp sssp ubuntu/sssp

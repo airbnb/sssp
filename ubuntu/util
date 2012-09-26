@@ -18,30 +18,5 @@ function statics {
   done
 }
 
-function links {
-  local statics=( $(statics) )
-  local libdir="$(ghc --print-libdir)"
-  local cmd=( ln -sft )
-  if [[ ${#statics[@]} -gt 0 ]]
-  then
-    echo "Found non-libc shared objects:" >&2
-    printf '  %s\n' "${statics[@]}" >&2
-    echo "Shall I softlink them to ${libdir}, to compile a static binary?" >&2
-    select yn in yes no
-    do
-      if [[ $yn = yes ]]
-      then
-        if [[ ${1:-} = --sudo ]]
-        then
-          echo 'Using sudo to form links...' >&2
-          cmd=( sudo ln -sft )
-        fi
-        "${cmd[@]}" "$libdir" "${statics[@]}"
-      fi
-      break
-    done
-  fi
-}
-
 "$@"
 
