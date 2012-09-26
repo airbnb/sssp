@@ -1,5 +1,5 @@
 name                          : sssp
-version                       : 1.0.0
+version                       : 1.1.0
 category                      : Text
 license-file                  : LICENSE
 author                        : Jason Dusek
@@ -34,9 +34,12 @@ library
                               , attempt >= 0.4
                               , attoparsec >= 0.10
                               , aws >= 0.7 && < 0.8
+                              , base64-bytestring >= 1.0
                               , blaze-builder >= 0.3
                               , case-insensitive >= 0.4
+                              , cereal >= 0.3.5
                               , conduit >= 0.5
+                              , cryptohash >= 0.7.5
                               , data-default >= 0.4
                               , http-conduit >= 1.5
                               , http-types >= 0.6
@@ -72,9 +75,12 @@ executable                      sssp
                               , attempt >= 0.4
                               , attoparsec >= 0.10
                               , aws >= 0.7 && < 0.8
+                              , base64-bytestring >= 1.0
                               , blaze-builder >= 0.3
                               , case-insensitive >= 0.4
+                              , cereal >= 0.3.5
                               , conduit >= 0.5
+                              , cryptohash >= 0.7.5
                               , data-default >= 0.4
                               , http-conduit >= 1.5
                               , http-types >= 0.6
