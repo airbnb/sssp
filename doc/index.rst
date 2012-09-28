@@ -7,7 +7,7 @@ Synopsis
 
 .. code-block:: text
 
-    sssp web?
+    sssp
 
 Description
 -----------

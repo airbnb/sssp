@@ -1,5 +1,5 @@
 SYNOPSIS
-       sssp web?
+       sssp
 
 DESCRIPTION
        SSSP is an HTTP proxy for S3 that can generate short-lived, signed URLs
