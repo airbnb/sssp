@@ -82,9 +82,9 @@ listing as a plaintext document, one URL per line.
 .. code-block:: text
 
   GET http://sssp.io/p/a/t/h         # Signed for the default time (10s).
+  GET http://sssp.io/p/a/t/h?t=n     # Signed for n seconds.
 
 ..  TODO
-    GET http://sssp.io/p/a/t/h?t=_n_s  # Signed for _n_ seconds.
     GET http://sssp.io/p/a/t/h?t=_t_   # Signed until _t_.
     GET http://sssp.io/p/a/t/h?nosign  # Just this URL again.
 
