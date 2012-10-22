@@ -18,7 +18,7 @@ extra-source-files            : README
 
 source-repository               head
   type                        : git
-  location                    : http://github.com/airbnb/sssp.git
+  location                    : http://github.com/erudify/sssp.git
 
 
 flag no-cli
