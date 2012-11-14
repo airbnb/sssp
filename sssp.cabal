@@ -6,11 +6,11 @@ license-file                  : LICENSE
 author                        : Jason Dusek
 maintainer                    : oss@solidsnack.be
 homepage                      : http://github.com/erudify/sssp/
-synopsis                      : HTTP proxy for S3.
+synopsis                      : S3 Simple Signing Proxy
 description                   :
   An HTTP proxy for S3 that generates signed URLs for GETs and PUTs and
   proxies DELETEs. A very limited form of range queries, using semantic
-  version sort and ASCII set, are supported.
+  version sort and ASCII sort, are supported.
 
 cabal-version                 : >= 1.10
 build-type                    : Simple
