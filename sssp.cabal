@@ -1,5 +1,5 @@
 name                          : sssp
-version                       : 1.1.0
+version                       : 1.1.1
 category                      : Text
 license                       : BSD3
 license-file                  : LICENSE
@@ -54,6 +54,7 @@ library
   exposed-modules             : Aws.SSSP
                                 Aws.SSSP.App
                                 Aws.SSSP.Configuration
+                                Aws.SSSP.WWW
   default-extensions          : OverloadedStrings
                                 ParallelListComp
                                 PatternGuards
