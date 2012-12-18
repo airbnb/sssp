@@ -3,22 +3,26 @@
            , RecordWildCards
            , StandaloneDeriving
            , PatternGuards
+           , DeriveDataTypeable
   #-}
 module Aws.SSSP where
 
 import           Control.Applicative
 import           Control.Arrow ((***))
+import           Control.Exception
 import           Control.Monad
-import           Data.Char
-import           Data.Either
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as Bytes
+import           Data.Char
+import           Data.Either
 import qualified Data.List as List
 import           Data.Maybe
 import           Data.Monoid
 import           Data.Ord
 import qualified Data.Set as Set
+import           Data.Typeable
 import           Data.Word
+import           System.IO
 
 import qualified Aws as Aws
 import qualified Aws.Core as Aws
@@ -43,59 +47,58 @@ import qualified Aws.SSSP.WWW as WWW
 wai :: Ctx -> WWW.Application
 wai ctx@Ctx{..} req@WWW.Request{..} = do
   resolved <- task ctx requestMethod (resource req)
-  maybe (return badTask) id $ do
-    task <- resolved
-    Just $ case task of
-      Retrieve t -> do
-        maybe (return badTime) id $ do
+  attempt exc web resolved
+ where
+  web task = case task of
+    Retrieve t -> do
+      maybe (return badTime) id $ do
+        seconds <- timeParam
+        Just $ do
+          sigInfo <- liftIO $ sigData (fromIntegral seconds)
+          let q = Aws.getObject bucket t
+              s = Aws.queryToUri (Aws.signQuery q s3 sigInfo)
+              b = Blaze.fromByteString (s `Bytes.snoc` '\n')
+              m = "max-age=" ++ show (seconds - 1)
+              headers = [("Cache-Control", Bytes.pack m)
+                        ,("Content-Type", "text/plain")
+                        ,("Location", s)]
+          if direct then WWW.proxied manager (Bytes.unpack s)
+                    else return $ WWW.ResponseBuilder status307 headers b
+    Listing ts -> do
+      return $ WWW.ResponseBuilder
+        HTTP.status200 [("Content-Type", "text/plain")]
+                       (mconcat (plusNL . s3Encode <$> ts))
+    Remove ts  -> do
+      let deletes = [ Aws.DeleteObject t bucket | t <- ts ]
+      responses <- mapM (Aws.aws aws s3 manager) deletes
+      let attempts = [ attempt | Aws.Response _meta attempt <- responses ]
+          d = [ mappend `uncurry` case a of
+                  Success _ -> ("deleted: ", t)
+                  Failure _ -> ("failed:  ", t) | a <- attempts | t <- ts ]
+          status | all isSuccess attempts = HTTP.status200
+                 | otherwise              = HTTP.status500
+      return $ WWW.ResponseBuilder
+        status [("Content-Type", "text/plain")]
+               (Blaze.fromText . Text.unlines $ d)
+    Write t    -> do
+      let len = join $ listToMaybe
+                [ fst <$> (listToMaybe . reads . Bytes.unpack) v
+                | (k, v) <- requestHeaders, k == "Content-Length" ]
+      maybe (return noLength) id $ do
+        n <- len
+        Just . maybe (return badTime) id $ do
           seconds <- timeParam
           Just $ do
             sigInfo <- liftIO $ sigData (fromIntegral seconds)
-            let q = Aws.getObject bucket t
-                s = Aws.queryToUri (Aws.signQuery q s3 sigInfo)
+            let q = Aws.putObject bucket t (blazeBody n)
+                r = WWW.addHeaders q requestHeaders
+                s = Aws.queryToUri (Aws.signQuery r s3 sigInfo)
                 b = Blaze.fromByteString (s `Bytes.snoc` '\n')
-                m = "max-age=" ++ show (seconds - 1)
+                m = "max-age=" ++ show (defaultSeconds - 1)
                 headers = [("Cache-Control", Bytes.pack m)
                           ,("Content-Type", "text/plain")
                           ,("Location", s)]
-            if direct then WWW.proxied manager (Bytes.unpack s)
-                      else return $ WWW.ResponseBuilder status307 headers b
-      Listing ts -> do
-        return $ WWW.ResponseBuilder
-          HTTP.status200 [("Content-Type", "text/plain")]
-                         (mconcat (plusNL . s3Encode <$> ts))
-      Remove ts  -> do
-        let deletes = [ Aws.DeleteObject t bucket | t <- ts ]
-        responses <- mapM (Aws.aws aws s3 manager) deletes
-        let attempts = [ attempt | Aws.Response _meta attempt <- responses ]
-            d = [ mappend `uncurry` case a of
-                    Success _ -> ("deleted: ", t)
-                    Failure _ -> ("failed:  ", t) | a <- attempts | t <- ts ]
-            status | all isSuccess attempts = HTTP.status200
-                   | otherwise              = HTTP.status500
-        return $ WWW.ResponseBuilder
-          status [("Content-Type", "text/plain")]
-                 (Blaze.fromText . Text.unlines $ d)
-      Write t    -> do
-        let len = join $ listToMaybe
-                  [ fst <$> (listToMaybe . reads . Bytes.unpack) v
-                  | (k, v) <- requestHeaders, k == "Content-Length" ]
-        maybe (return noLength) id $ do
-          n <- len
-          Just . maybe (return badTime) id $ do
-            seconds <- timeParam
-            Just $ do
-              sigInfo <- liftIO $ sigData (fromIntegral seconds)
-              let q = Aws.putObject bucket t (blazeBody n)
-                  r = WWW.addHeaders q requestHeaders
-                  s = Aws.queryToUri (Aws.signQuery r s3 sigInfo)
-                  b = Blaze.fromByteString (s `Bytes.snoc` '\n')
-                  m = "max-age=" ++ show (defaultSeconds - 1)
-                  headers = [("Cache-Control", Bytes.pack m)
-                            ,("Content-Type", "text/plain")
-                            ,("Location", s)]
-              return $ WWW.ResponseBuilder status307 headers b
- where
+            return $ WWW.ResponseBuilder status307 headers b
   defaultSeconds = 10
   status307 = HTTP.Status 307 "Temporary Redirect"
   sigData n = Aws.signatureData (Aws.ExpiresIn n) (Aws.credentials aws)
@@ -108,6 +111,10 @@ wai ctx@Ctx{..} req@WWW.Request{..} = do
   badTime = WWW.ResponseBuilder
     HTTP.status400 [("Content-Type", "text/plain")]
                    (Blaze.fromByteString "Give time as t=2..40000000\n")
+  error500 = WWW.ResponseBuilder
+    HTTP.status500 [("Content-Type", "text/plain")]
+                   ( Blaze.fromByteString
+                     "Something has gone terribly, terribly wrong.\n" )
   blazeBody len = Conduit.RequestBodySource len
                 . Conduit.mapOutput Blaze.fromByteString $ requestBody
   timeParam  =  (maybe defaultSeconds id . listToMaybe)
@@ -118,16 +125,22 @@ wai ctx@Ctx{..} req@WWW.Request{..} = do
     validate i   = guard (notTooMany i) >> Just i
     notTooMany i = i >= 2 && i <= 40000000 -- About 16 months
   direct = any ((=="direct") . fst) queryString
+  exc e = error500 <$ (liftIO . hPutStrLn stderr . mconcat)
+                        ["exception // ", Bytes.unpack prettyReq,
+                                     " // ", show e]
+  prettyReq = Bytes.unwords [requestMethod, rawPathInfo]
 
-task :: Ctx -> HTTP.Method -> Resource -> Conduit.ResourceT IO (Maybe Task)
-task ctx method resource = do
-  urls                  <- fromAttempt <$> resolve ctx resource
-  return $ case (method, resource) of
-    ("GET", Singular _) -> Retrieve <$> (listToMaybe =<< urls)
-    ("GET", Plural   _) -> Listing  <$> urls
-    ("DELETE", _)       -> Remove   <$> urls
-    ("PUT", Singular _) -> Write    <$> (listToMaybe =<< urls)
-    _                   -> Nothing
+task :: Ctx -> HTTP.Method -> Resource -> Conduit.ResourceT IO (Attempt Task)
+task ctx method resource = (task' =<<) <$> resolve ctx resource
+ where task' urls = case (method, resource, urls) of
+         ("GET", Singular _, h:_) -> pure $ Retrieve h
+         ("GET", Plural   _, _)   -> pure $ Listing urls
+         ("DELETE", _, _)         -> pure $ Remove urls
+         ("PUT", Singular _, h:_) -> pure $ Write h
+         _                        -> failure . Err $ "Malformed task: " ++ msg
+        where msg = unwords [show method, show resource, trim urls]
+              trim (a:b:_:_) = "["++ show a ++", "++ show b ++", ...]"
+              trim x         = show x
 
 data Task = Retrieve Text
           | Listing [Text]
@@ -156,6 +169,12 @@ data Order       = ASCII | SemVer deriving (Eq, Ord, Show)
 data Wildcard    = Hi Order | Lo Order deriving (Eq, Ord, Show)
 data SetWildcard = Include Word Wildcard | Exclude Word Wildcard
  deriving (Eq, Ord, Show)
+
+data Err = Err String | ErrData ByteString deriving Typeable
+instance Show Err where show (ErrData b) = "SSSPErr " ++ Bytes.unpack b
+                        show (Err s)     = "SSSPErr " ++ s
+instance Exception Err
+
 
 -- | Interpret a request URL as a resource, expanding wildcards as needed. By
 --   default, wildcards are expanded with @\@@ as the meta-character (@\@hi@,
