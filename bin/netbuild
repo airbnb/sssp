@@ -18,7 +18,7 @@ function netbuild {
   ssh "$1" sh | tar -xv
 }
 
-if fgrep -q -- "$(declare -F | cut -d' ' -f3-)" <<<"$1"
+if declare -F | cut -d' ' -f3 | fgrep -q -- "${1:-}"
 then
   "$@"
 else
