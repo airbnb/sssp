@@ -113,15 +113,16 @@ createCtx map = do
                                    , Aws.credentials = Aws.Credentials id key
                                    , Aws.logger = Aws.defaultLog Aws.Warning }
   s3Configured :: Maybe (Aws.S3Configuration Aws.NormalQuery)
-  s3Configured = do region <- read "AWS_REGION"
+  s3Configured = do region <- read "AWS_DEFAULT_REGION" <|> read "AWS_REGION"
                     url    <- endpoint region
                     Just defS3{Aws.s3Endpoint=url}
   utf8 = Text.decodeUtf8With Text.lenientDecode
   defS3 = Aws.defServiceConfig :: Aws.S3Configuration Aws.NormalQuery
 
 validate :: ByteString -> ByteString -> Maybe ByteString
-validate "AWS_REGION" r = endpoint r
-validate _            s = guard (s /= "") >> Just s
+validate "AWS_REGION"         r = endpoint r
+validate "AWS_DEFAULT_REGION" r = endpoint r
+validate _                    s = guard (s /= "") >> Just s
 
 prune :: Map ByteString ByteString -> Map ByteString ByteString
 prune  = Map.mapMaybeWithKey validate
