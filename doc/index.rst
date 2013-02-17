@@ -33,7 +33,9 @@ Configuration
 
 These settings can be passed as environment variables or fed to the server on
 STDIN in colon separated format. Both the new and old forms of the
-AWS credential environment variables are supported.
+AWS credential environment variables are supported. The ``AWS_DEFAULT_REGION``
+variable, shared with AWS Python CLI tools, is supported as well. The
+``AWS_REGION`` is an old, SSSP specific version of the same functionality.
 
 .. code-block:: bash
 
@@ -42,6 +44,7 @@ AWS credential environment variables are supported.
   AWS_ACCESS_KEY_ID           = account access key
   AWS_SECRET_KEY              = secret
   AWS_SECRET_ACCESS_KEY       = secret
+  AWS_DEFAULT_REGION          = eu-west-1, classic, us-east-1, ...
   AWS_REGION                  = eu-west-1, classic, us-east-1, ...
 
   # Storage settings
