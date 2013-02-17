@@ -1,35 +1,70 @@
-.PHONY: clean sssp ubuntu/dir
+.PHONY: doc clean cabal ubuntu-build-deps tarballs
 
-sssp:
-	ghc -outputdir ./tmp --make -O2 -threaded $@.hs -o $@
-	strip $@
+# Prevents the .sha files from being deleted. Not sure what the story is.
+.SECONDARY:
 
-ubuntu/build: sssp ubuntu/sssp ubuntu/dir
+v = $(shell git describe || bin/tags cabal_version || echo '(unversioned)')
+tag = sssp-$(shell ./bin/tags tag)
+built = $(wildcard tmp/dist/*/sssp)
+tarballs = $(built:%/sssp=%.tbz)
 
-ubuntu/sssp: libs = $(shell ubuntu/util statics)
-ubuntu/sssp: ubuntu/util
-	ghc -outputdir ./tmp --make -O2 -threaded $<.hs -o $@ \
+ifeq (Darwin,$(shell uname))
+  tagged = tmp/sssp.cabal
+else
+  tagged = tmp/sssp.custom
+endif
+
+this_platform: tmp/dist/$(tag)/sssp
+
+version:
+	echo $v > $@
+
+tmp/dist/$(tag)/sssp: $(tagged)
+	mkdir -p tmp/dist/$(tag)
+	mv -f $< $@
+
+tmp/dist/%/sssp.gpg: tmp/dist/%/sssp
+	gpg --use-agent --detach-sign $<
+
+tmp/dist/%/sssp.sha: d = $(@:%/sssp.sha=%)
+tmp/dist/%/sssp.sha: tmp/dist/%/sssp
+	( cd $d && shasum --portable --algorithm 512 sssp > sssp.sha )
+
+tarballs: $(tarballs)
+
+tmp/dist/%.tbz: d = $(@:tmp/dist/%.tbz=%)
+tmp/dist/%.tbz: tmp/dist/%/sssp tmp/dist/%/sssp.gpg tmp/dist/%/sssp.sha
+	tar cjf $@ -C tmp/dist $d
+
+sssp: version sssp.hs doc
+	ghc -outputdir tmp --make -O2 sssp.hs -o sssp
+
+tmp/sssp.custom: libs = $(shell bin/so2a4hs statics sssp)
+tmp/sssp.custom: sssp bin/so2a4hs
+	ghc -outputdir tmp --make -O2 sssp.hs -o $@ \
 	 -optl-Wl,--whole-archive \
 	  $(libs:%=-optl%) \
 	 -optl-Wl,--no-whole-archive
 	strip $@
 
-ubuntu/sssp.sig: ubuntu/sssp
-	rm -f $@
-	gpg --use-agent --detach-sign $<
+ubuntu-build-deps:
+	env DEBIAN_FRONTEND=noninteractive aptitude install -y \
+	  python-sphinx cabal-install
+	cabal install --only-dependencies
 
-ubuntu/sssp.sha: ubuntu/sssp
-	shasum --portable --algorithm 512 $< > $@
+tmp/sssp.cabal: dist/build/sssp/sssp
+	mkdir -p tmp
+	cp dist/build/sssp/sssp $@
+	strip $@
 
-ubuntu/dir: v = $(shell egrep ^version ./sssp.cabal | sed 's/^.*: *//')
-ubuntu/dir: arch = $(shell dpkg-architecture -qDEB_BUILD_ARCH)
-ubuntu/dir:
-	mkdir ubuntu/sssp-$(v)-$(arch)-ubuntu
+dist/build/sssp/sssp: cabal
 
-ubuntu/dist: d = $(wildcard ubuntu/sssp-*-*-ubuntu)
-ubuntu/dist: ubuntu/sssp.sig ubuntu/sssp.sha ubuntu/sssp
-	tar -cC ubuntu $(^:ubuntu/%=%) | tar -xC $d
-	tar -cjf $(d:ubuntu/%=%).tbz -C ubuntu $(d:ubuntu/%=%)
+cabal: version
+	cabal configure --disable-executable-profiling \
+	                --disable-library-profiling
+	cabal build
+
+doc: README
 
 README: doc/index.rst
 	( cd doc && make man )
@@ -37,6 +72,6 @@ README: doc/index.rst
 	  sed -n '/SYNOPSIS/,/AUTHOR/ { /AUTHOR/d ; p ;}' > ./README
 
 clean:
-	rm -rf tmp ubuntu/tmp sssp ubuntu/sssp
+	rm -rf tmp sssp dist/build
 	( cd ./doc/ && make clean )
 
