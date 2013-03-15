@@ -1,13 +1,13 @@
-======================================
- sssp - proxied s3 lookups and signing
-======================================
+===============================
+ sssp - S3 simple signing proxy
+===============================
 
 Synopsis
 --------
 
 .. code-block:: text
 
-    sssp web?
+    sssp
 
 Description
 -----------
@@ -32,13 +32,19 @@ Configuration
 -------------
 
 These settings can be passed as environment variables or fed to the server on
-STDIN in colon separated format.
+STDIN in colon separated format. Both the new and old forms of the
+AWS credential environment variables are supported. The ``AWS_DEFAULT_REGION``
+variable, shared with AWS Python CLI tools, is supported as well. The
+``AWS_REGION`` is an old, SSSP specific version of the same functionality.
 
 .. code-block:: bash
 
   # AWS Settings
+  AWS_ACCESS_KEY              = account access key
   AWS_ACCESS_KEY_ID           = account access key
+  AWS_SECRET_KEY              = secret
   AWS_SECRET_ACCESS_KEY       = secret
+  AWS_DEFAULT_REGION          = eu-west-1, classic, us-east-1, ...
   AWS_REGION                  = eu-west-1, classic, us-east-1, ...
 
   # Storage settings
@@ -56,8 +62,9 @@ like the follow example, are parsed without error:
   export SSSP_BUCKET=dist
   export SSSP_CONN=*:6000
 
-However, SSSP does not parse shell quotes (which one is unlikely to need for
-the kinds of values involved, given their rigid formats).
+However, SSSP skips over lines that contain quotes (``"'``) or that
+appear to require shell interpolation for their correct interpolation (lines
+containing ``$`{}``).
 
 REST Interface
 --------------
@@ -78,9 +85,9 @@ listing as a plaintext document, one URL per line.
 .. code-block:: text
 
   GET http://sssp.io/p/a/t/h         # Signed for the default time (10s).
+  GET http://sssp.io/p/a/t/h?t=n     # Signed for n seconds.
 
 ..  TODO
-    GET http://sssp.io/p/a/t/h?t=_n_s  # Signed for _n_ seconds.
     GET http://sssp.io/p/a/t/h?t=_t_   # Signed until _t_.
     GET http://sssp.io/p/a/t/h?nosign  # Just this URL again.
 
@@ -121,13 +128,10 @@ wildcard; the result is a listing:
   GET http://sssp.io/dist/x/@lo2  -200->  dist/x/x-0.1.1.tgz
                                           dist/x/x-0.1.4.tgz
 
-Counts are the natural numbers starting at 0.
+Counts are the natural numbers starting at 0. The wildcard ``@*`` refers to
+"all the items".
 
-..  TODO
-    The wildcard ``@*`` refers to "all the items" (``@hi*`` and ``@lo*`` are
-    equivalent so just ``@*`` is enough.)
-
-A counted wildcard, like ``@hi2``, can be suffixed with a tilde to form it's
+A counted wildcard, like ``@hi2``, can be suffixed with a tilde to form its
 complement -- so ``@hi2~`` is everything but the highest two items. This can
 be useful for bulk deletion of old/new things.
 
@@ -145,6 +149,13 @@ Wildcards
   ``@hi``, ``@lo``
     The default sort, which is semantic version sort.
 
+  ``@*``, ``@*.semver``, ``@*.ascii``
+    All the items, in the default order (semantic version) or in a specified
+    order.
+
+ASCII sort can be substantially more performant than semantic version sort,
+because S3 returns data in ASCII order and thus no real sorting is necessary.
+
 Examples
 --------
 
@@ -153,7 +164,7 @@ Examples
   # Start web application.
   sssp < conf
 
-  # Start web application with some configuration provided by the environment.
+  # Start web application with configuration provided by the environment.
   export AWS_ACCESS_KEY_ID=...
   export AWS_SECRET_ACCESS_KEY=...
   sssp <<CONF

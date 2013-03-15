@@ -1,0 +1,22 @@
+#!/bin/bash
+set -o errexit -o nounset -o pipefail
+
+function shareds {
+  ldd sssp | sed -nr '/^\t[^ ]+[.][0-9]+ => ([^ ]+)( .+)?$/ { s//\1/ ; p }'
+}
+
+function debs {
+  shareds | xargs dpkg -S | sort
+}
+
+function statics {
+  debs | fgrep -v libc6 | cut -d' ' -f2 |
+  sed -nr '/^.+[/]([^/]+)[.]so([.][0-9.]+)?$/ { s//\1.a/ ; p }' |
+  while read lib
+  do
+    find /usr/lib /lib -name "$lib" | head -n1
+  done
+}
+
+"$@"
+

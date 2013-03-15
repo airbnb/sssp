@@ -30,9 +30,9 @@ import qualified Network.Wai.Handler.Warp as WWW
 import Aws.SSSP (Ctx(..))
 
 
-variables =
-  [ "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION", "SSSP_BUCKET",
-    "SSSP_CONN", "PORT" ]
+variables = [ "AWS_ACCESS_KEY",    "AWS_SECRET_KEY",
+              "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY",
+              "AWS_REGION",        "SSSP_BUCKET", "SSSP_CONN", "PORT" ]
 
 fromEnv :: IO (Map ByteString ByteString)
 fromEnv  = Map.fromList . catMaybes <$> mapM paired variables
@@ -48,12 +48,19 @@ fromBytes :: ByteString -> Map ByteString ByteString
 fromBytes bytes = Map.fromList
   [ (k, v) | Right (k, v) <- parseOnly line <$> Bytes.lines bytes ]
 
+-- | Recognizes a parseable @k = v@ or @k: v@ style line. It's relatively
+--   flexible on input but rejects lines that might have shell interpolations
+--   in them -- lines containing one of @$`{}@ -- as well as lines with shell
+--   quotes (@'\"@). This allows the file input parser to skip over such values
+--   when a raw rc file is loaded.
 line :: Parser (ByteString, ByteString)
 line  = optional (string "export") *> skipSpace *> do
-        (,) <$> choice (string <$> variables)
-            <*> (skipWhile (inClass " :=") *> chopped)
+        (,) <$> choice (string <$> variables) <*> (copula *> chopped)
  where
-  chopped = fst . Bytes.spanEnd isSpace <$> takeTill (inClass "\n\r")
+  copula = skipWhile (==' ') *> (char '=' <|> char ':') <* skipWhile (==' ')
+  chopped = simple =<< fst . Bytes.spanEnd isSpace
+                   <$> takeWhile1 (notInClass "\n\r")
+  simple s = guard (and [ Bytes.notElem c s | c <- "${}`\"'" ]) >> return s
 
 fromEnvAndSTDIN = do
   env    <- fromEnv
@@ -95,8 +102,9 @@ createCtx :: Map ByteString ByteString -> IO (Maybe Ctx)
 createCtx map = do
   manager <- Conduit.newManager def
   return $ do
-    aws    <- aws <$> read "AWS_ACCESS_KEY_ID" <*> read "AWS_SECRET_ACCESS_KEY"
-    s3     <- s3Configured <|> Just Aws.defaultConfiguration
+    aws    <- aws <$> (read "AWS_ACCESS_KEY" <|> read "AWS_ACCESS_KEY_ID")
+                  <*> (read "AWS_SECRET_KEY" <|> read "AWS_SECRET_ACCESS_KEY")
+    s3     <- s3Configured <|> Just defS3
     bucket <- utf8 <$> read "SSSP_BUCKET"
     Just Ctx{bucket=bucket, aws=aws, s3=s3{Aws.s3UseUri=True}, manager=manager}
  where
@@ -104,14 +112,17 @@ createCtx map = do
   aws id key   = Aws.Configuration { Aws.timeInfo = Aws.Timestamp
                                    , Aws.credentials = Aws.Credentials id key
                                    , Aws.logger = Aws.defaultLog Aws.Warning }
-  s3Configured = do region <- read "AWS_REGION"
+  s3Configured :: Maybe (Aws.S3Configuration Aws.NormalQuery)
+  s3Configured = do region <- read "AWS_DEFAULT_REGION" <|> read "AWS_REGION"
                     url    <- endpoint region
-                    Just Aws.defaultConfiguration{Aws.s3Endpoint=url}
+                    Just defS3{Aws.s3Endpoint=url}
   utf8 = Text.decodeUtf8With Text.lenientDecode
+  defS3 = Aws.defServiceConfig :: Aws.S3Configuration Aws.NormalQuery
 
 validate :: ByteString -> ByteString -> Maybe ByteString
-validate "AWS_REGION" r = endpoint r
-validate _            s = guard (s /= "") >> Just s
+validate "AWS_REGION"         r = endpoint r
+validate "AWS_DEFAULT_REGION" r = endpoint r
+validate _                    s = guard (s /= "") >> Just s
 
 prune :: Map ByteString ByteString -> Map ByteString ByteString
 prune  = Map.mapMaybeWithKey validate

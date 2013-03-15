@@ -1,16 +1,16 @@
 name                          : sssp
-version                       : 0.0.0
+version                       : 1.1.1
 category                      : Text
 license                       : BSD3
 license-file                  : LICENSE
 author                        : Jason Dusek
 maintainer                    : oss@solidsnack.be
-homepage                      : http://github.com/airbnb/sssp/
-synopsis                      : HTTP proxy for S3.
+homepage                      : http://github.com/erudify/sssp/
+synopsis                      : S3 Simple Signing Proxy
 description                   :
-  An HTTP proxy for S3 that generates signed URLs for GETs and proxies PUTs
-  and DELETEs. Range queries, using semantic version sort and ASCII set, are
-  supported. 
+  An HTTP proxy for S3 that generates signed URLs for GETs and PUTs and
+  proxies DELETEs. A very limited form of range queries, using semantic
+  version sort and ASCII sort, are supported.
 
 cabal-version                 : >= 1.10
 build-type                    : Simple
@@ -19,7 +19,7 @@ extra-source-files            : README
 
 source-repository               head
   type                        : git
-  location                    : http://github.com/airbnb/sssp.git
+  location                    : http://github.com/erudify/sssp.git
 
 
 flag no-cli
@@ -34,9 +34,13 @@ library
                               , containers
                               , attempt >= 0.4
                               , attoparsec >= 0.10
-                              , aws >= 0.6
+                              , aws >= 0.7 && < 0.8
+                              , base64-bytestring >= 1.0
                               , blaze-builder >= 0.3
+                              , case-insensitive >= 0.4
+                              , cereal >= 0.3.5
                               , conduit >= 0.5
+                              , cryptohash >= 0.7.5
                               , data-default >= 0.4
                               , http-conduit >= 1.5
                               , http-types >= 0.6
@@ -50,6 +54,7 @@ library
   exposed-modules             : Aws.SSSP
                                 Aws.SSSP.App
                                 Aws.SSSP.Configuration
+                                Aws.SSSP.WWW
   default-extensions          : OverloadedStrings
                                 ParallelListComp
                                 PatternGuards
@@ -71,9 +76,13 @@ executable                      sssp
                               , containers
                               , attempt >= 0.4
                               , attoparsec >= 0.10
-                              , aws >= 0.6
+                              , aws >= 0.7 && < 0.8
+                              , base64-bytestring >= 1.0
                               , blaze-builder >= 0.3
+                              , case-insensitive >= 0.4
+                              , cereal >= 0.3.5
                               , conduit >= 0.5
+                              , cryptohash >= 0.7.5
                               , data-default >= 0.4
                               , http-conduit >= 1.5
                               , http-types >= 0.6

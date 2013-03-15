@@ -25,7 +25,7 @@ args args    = argumentError args
 web = do
   res <- conf
   case res of Left map         -> err (misconfigured map)
-              Right (ctx, www) -> WWW.runSettings www (WWW.logStdout (wai ctx))
+              Right (ctx, www) -> WWW.runSettings www (wai ctx)
  where
   misconfigured map = mappend "!!! Misconfigured for web; please check:\n"
                               (render map)

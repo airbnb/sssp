@@ -3,28 +3,33 @@
            , RecordWildCards
            , StandaloneDeriving
            , PatternGuards
+           , DeriveDataTypeable
   #-}
 module Aws.SSSP where
 
 import           Control.Applicative
+import           Control.Arrow ((***))
+import           Control.Exception
 import           Control.Monad
-import           Control.Monad.Trans
-import           Data.Char
-import           Data.Either
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as Bytes
+import           Data.Char
+import           Data.Either
 import qualified Data.List as List
 import           Data.Maybe
 import           Data.Monoid
 import           Data.Ord
 import qualified Data.Set as Set
+import           Data.Typeable
 import           Data.Word
+import           System.IO
 
 import qualified Aws as Aws
 import qualified Aws.Core as Aws
 import qualified Aws.S3 as Aws
 import qualified Blaze.ByteString.Builder as Blaze
 import qualified Blaze.ByteString.Builder.Char.Utf8 as Blaze
+import           Control.Monad.Trans
 import           Data.Attempt
 import           Data.Attoparsec.Text (Parser)
 import qualified Data.Attoparsec.Text as Atto
@@ -36,57 +41,65 @@ import qualified Network.Wai as WWW
 import qualified Network.HTTP.Conduit as Conduit
 import qualified Network.HTTP.Types as HTTP
 
+import qualified Aws.SSSP.WWW as WWW
+
 
 wai :: Ctx -> WWW.Application
 wai ctx@Ctx{..} req@WWW.Request{..} = do
-  resolved <- liftIO $ task ctx requestMethod (resource req)
-  maybe (return badTask) id $ do
-    task <- resolved
-    Just $ case task of
-      Redirect t -> do
-        n <- case [ toSignTime v | (k, Just v) <- queryString, k == "t" ] of
-               [              ] -> return 10
-               Just seconds : _ -> return seconds
-               Nothing      : _ -> return 2 -- TODO: Bad param message.
-        sigInfo <- liftIO $ sigData (fromIntegral n)
-        let q = Aws.getObject bucket t Aws.s3ErrorResponseConsumer
-            s = Aws.queryToUri (Aws.signQuery q s3 sigInfo)
-            b = Blaze.fromByteString (s `Bytes.snoc` '\n')
-            m = "max-age=" ++ show (n - 1)
-            headers = [("Cache-Control", Bytes.pack m)
-                      ,("Content-Type", "text/plain")
-                      ,("Location", s)]
-        return $ WWW.ResponseBuilder status307 headers b
-      Listing ts -> do
-        return $ WWW.ResponseBuilder
-          HTTP.status200 [("Content-Type", "text/plain")]
-                         (mconcat (plusNL . s3Encode <$> ts))
-      Remove ts  -> do
-        let deletes = [ Aws.DeleteObject t bucket | t <- ts ]
-        responses <- mapM (Aws.aws aws s3 manager) deletes
-        let attempts = [ attempt | Aws.Response _meta attempt <- responses ]
-            d = [ mappend `uncurry` case a of
-                    Success _ -> ("deleted: ", t)
-                    Failure _ -> ("failed:  ", t) | a <- attempts | t <- ts ]
-            status | all isSuccess attempts = HTTP.status200
-                   | otherwise              = HTTP.status500
-        return $ WWW.ResponseBuilder
-          status [("Content-Type", "text/plain")]
-                 (Blaze.fromText . Text.unlines $ d)
-      Write t    -> do
-        let len = join $ listToMaybe
-                  [ fst <$> (listToMaybe . reads . Bytes.unpack) v
-                  | (k, v) <- requestHeaders, k == "Content-Length" ]
-        maybe (return noLength) id $ do
-          n <- len
-          let po = Aws.putObject bucket t (blazeBody n)
-          Just $ do
-            Aws.Response _meta attempt <- Aws.aws aws s3 manager po
-            let status | isSuccess attempt = HTTP.status200
-                       | otherwise         = HTTP.status500
-            return $ WWW.ResponseBuilder
-              status [("Content-Type", "text/plain")] mempty
+  resolved <- task ctx requestMethod (resource req)
+  attempt exc web resolved
  where
+  web task = case task of
+    Retrieve t -> do
+      maybe (return badTime) id $ do
+        seconds <- timeParam
+        Just $ do
+          sigInfo <- liftIO $ sigData (fromIntegral seconds)
+          let q = Aws.getObject bucket t
+              s = Aws.queryToUri (Aws.signQuery q s3 sigInfo)
+              b = Blaze.fromByteString (s `Bytes.snoc` '\n')
+              m = "max-age=" ++ show (seconds - 1)
+              headers = [("Cache-Control", Bytes.pack m)
+                        ,("Content-Type", "text/plain")
+                        ,("Location", s)]
+          if direct then WWW.proxied manager (Bytes.unpack s)
+                    else return $ WWW.ResponseBuilder status307 headers b
+    Listing ts -> do
+      return $ WWW.ResponseBuilder
+        HTTP.status200 [("Content-Type", "text/plain")]
+                       (mconcat (plusNL . s3Encode <$> ts))
+    Remove ts  -> do
+      let deletes = [ Aws.DeleteObject t bucket | t <- ts ]
+      responses <- mapM (Aws.aws aws s3 manager) deletes
+      let attempts = [ attempt | Aws.Response _meta attempt <- responses ]
+          d = [ mappend `uncurry` case a of
+                  Success _ -> ("deleted: ", t)
+                  Failure _ -> ("failed:  ", t) | a <- attempts | t <- ts ]
+          status | all isSuccess attempts = HTTP.status200
+                 | otherwise              = HTTP.status500
+      return $ WWW.ResponseBuilder
+        status [("Content-Type", "text/plain")]
+               (Blaze.fromText . Text.unlines $ d)
+    Write t    -> do
+      let len = join $ listToMaybe
+                [ fst <$> (listToMaybe . reads . Bytes.unpack) v
+                | (k, v) <- requestHeaders, k == "Content-Length" ]
+      maybe (return noLength) id $ do
+        n <- len
+        Just . maybe (return badTime) id $ do
+          seconds <- timeParam
+          Just $ do
+            sigInfo <- liftIO $ sigData (fromIntegral seconds)
+            let q = Aws.putObject bucket t (blazeBody n)
+                r = WWW.addHeaders q requestHeaders
+                s = Aws.queryToUri (Aws.signQuery r s3 sigInfo)
+                b = Blaze.fromByteString (s `Bytes.snoc` '\n')
+                m = "max-age=" ++ show (defaultSeconds - 1)
+                headers = [("Cache-Control", Bytes.pack m)
+                          ,("Content-Type", "text/plain")
+                          ,("Location", s)]
+            return $ WWW.ResponseBuilder status307 headers b
+  defaultSeconds = 10
   status307 = HTTP.Status 307 "Temporary Redirect"
   sigData n = Aws.signatureData (Aws.ExpiresIn n) (Aws.credentials aws)
   badTask = WWW.ResponseBuilder
@@ -95,27 +108,41 @@ wai ctx@Ctx{..} req@WWW.Request{..} = do
   noLength = WWW.ResponseBuilder
     HTTP.status400 [("Content-Type", "text/plain")]
                    (Blaze.fromByteString "No Content-Length header.\n")
+  badTime = WWW.ResponseBuilder
+    HTTP.status400 [("Content-Type", "text/plain")]
+                   (Blaze.fromByteString "Give time as t=2..40000000\n")
+  error500 = WWW.ResponseBuilder
+    HTTP.status500 [("Content-Type", "text/plain")]
+                   ( Blaze.fromByteString
+                     "Something has gone terribly, terribly wrong.\n" )
   blazeBody len = Conduit.RequestBodySource len
-                . Conduit.mapOutput (Blaze.fromByteString) $ requestBody
-  toSignTime :: ByteString -> Maybe Integer
-  toSignTime  = (validate =<<) . (fst <$>) . listToMaybe . reads . Bytes.unpack
+                . Conduit.mapOutput Blaze.fromByteString $ requestBody
+  timeParam  =  (maybe defaultSeconds id . listToMaybe)
+            <$> sequence [ f v | (k, Just v) <- queryString, k == "t" ]
    where
+    f :: ByteString -> Maybe Integer
+    f  = (validate =<<) . (fst <$>) . listToMaybe . reads . Bytes.unpack
     validate i   = guard (notTooMany i) >> Just i
-    notTooMany i = i >= 2 && i <= 10000000 -- 4 months
+    notTooMany i = i >= 2 && i <= 40000000 -- About 16 months
+  direct = any ((=="direct") . fst) queryString
+  exc e = error500 <$ (liftIO . hPutStrLn stderr . mconcat)
+                        ["exception // ", Bytes.unpack prettyReq,
+                                     " // ", show e]
+  prettyReq = Bytes.unwords [requestMethod, rawPathInfo]
 
-task :: Ctx -> HTTP.Method -> Resource -> IO (Maybe Task)
-task ctx m r
-  | "GET"    <- m, Singular _ <- r = (Redirect <$>) . (listToMaybe =<<)
-                                  <$> resolved
-  | "GET"    <- m, Plural   _ <- r = (Listing <$>) <$> resolved
-  | "DELETE" <- m                  = (Remove <$>) <$> resolved
-  | "PUT"    <- m, Singular _ <- r = (Write <$>) . (listToMaybe =<<)
-                                  <$> resolved
-  | otherwise                      = return Nothing
- where
-  resolved = fromAttempt <$> resolve ctx r
+task :: Ctx -> HTTP.Method -> Resource -> Conduit.ResourceT IO (Attempt Task)
+task ctx method resource = (task' =<<) <$> resolve ctx resource
+ where task' urls = case (method, resource, urls) of
+         ("GET", Singular _, h:_) -> pure $ Retrieve h
+         ("GET", Plural   _, _)   -> pure $ Listing urls
+         ("DELETE", _, _)         -> pure $ Remove urls
+         ("PUT", Singular _, h:_) -> pure $ Write h
+         _                        -> failure . Err $ "Malformed task: " ++ msg
+        where msg = unwords [show method, show resource, trim urls]
+              trim (a:b:_:_) = "["++ show a ++", "++ show b ++", ...]"
+              trim x         = show x
 
-data Task = Redirect Text
+data Task = Retrieve Text
           | Listing [Text]
           | Remove [Text]
           | Write Text -- (Conduit.RequestBody IO)
@@ -132,7 +159,7 @@ data Resource = Singular [Either Text Wildcard]
 
 data Ctx = Ctx { bucket :: Aws.Bucket
                , aws :: Aws.Configuration
-               , s3 :: Aws.S3Configuration
+               , s3 :: Aws.S3Configuration Aws.NormalQuery
                , manager :: Conduit.Manager }
 instance Show Ctx where
   show Ctx{..} = mconcat [ "Ctx { bucket=", show bucket
@@ -143,6 +170,12 @@ data Wildcard    = Hi Order | Lo Order deriving (Eq, Ord, Show)
 data SetWildcard = Include Word Wildcard | Exclude Word Wildcard
  deriving (Eq, Ord, Show)
 
+data Err = Err String | ErrData ByteString deriving Typeable
+instance Show Err where show (ErrData b) = "SSSPErr " ++ Bytes.unpack b
+                        show (Err s)     = "SSSPErr " ++ s
+instance Exception Err
+
+
 -- | Interpret a request URL as a resource, expanding wildcards as needed. By
 --   default, wildcards are expanded with @\@@ as the meta-character (@\@hi@,
 --   @\@lo.semver5@) but the meta-character can be changed with a query
@@ -152,13 +185,13 @@ data SetWildcard = Include Word Wildcard | Exclude Word Wildcard
 --   escapes itself in leading position, in a simple way: leading runs are
 --   shortened by one character. Some examples of path components and their
 --   interpretation are helpful:
--- @
---    hi      -> The string "hi".
---    @hi     -> The hi.semver wildcard.
---    @@hi    -> The string "@hi".
---    @@@hi   -> The string "@@hi".
---    ...and so on...
--- @
+--
+-- >  hi      -> The string "hi".
+-- >  @hi     -> The hi.semver wildcard.
+-- >  @@hi    -> The string "@hi".
+-- >  @@@hi   -> The string "@@hi".
+-- >  ...and so on...
+--
 --   Sending @meta=_@ as a query parameter changes the meta-character to an
 --   underscore. The meta-character may be any single character; empty or
 --   overlong @meta@ parameters are ignored.
@@ -208,10 +241,18 @@ wildcard meta = Atto.char meta *> Atto.choice matchers
 -- | Match a wildcard set, ending with a count (if it is inclusive) or an
 --   optional count and a final tilde (if it is exclusive).
 setWildcard :: Char -> Parser SetWildcard
-setWildcard meta = wildcard meta <**> (exclude <|> include)
+setWildcard meta = star meta <|> wildcard meta <**> (exclude <|> include)
  where
   include = Include <$> Atto.decimal
   exclude = Exclude <$> Atto.option 1 Atto.decimal <* Atto.char '~'
+
+star :: Char -> Parser SetWildcard
+star meta =  Atto.char meta *> Atto.char '*'
+          *> (Exclude 0 . Lo <$> Atto.option SemVer ordering)
+ where
+  ordering :: Parser Order
+  ordering  =  (Atto.string ".ascii"  *> pure ASCII)
+           <|> (Atto.string ".semver" *> pure SemVer)
 
 -- | Wildcards and their textual representations.
 wildcards :: [(Text, Wildcard)]
@@ -226,7 +267,7 @@ wildcards = [( "hi.ascii", Hi ASCII)  ,( "lo.ascii", Lo ASCII)
 -- | Translate a resource in to a listing of objects. While intermediate S3
 --   prefixes (directories) are traversed, the final match is always on keys
 --   for objects.
-resolve :: Ctx -> Resource -> IO (Attempt [Text])
+resolve :: Ctx -> Resource -> Conduit.ResourceT IO (Attempt [Text])
 resolve Ctx{..} res = case res of
   Plural [ ]          -> (fst <$>) <$> listing Ctx{..} ""
   Plural components   -> resolve' "" (simplify <$> components)
@@ -237,7 +278,6 @@ resolve Ctx{..} res = case res of
   simplify :: Either (Either Text Wildcard) SetWildcard
            -> Either Text SetWildcard
   simplify = either pluralize Right
-  resolve' :: Text -> [Either Text SetWildcard] -> IO (Attempt [Text])
   resolve' prefix [   ] = return (Success [prefix])
   resolve' prefix (h:t) = case h of
     Left ""   -> (fst <$>) <$> listing Ctx{..} prefix
@@ -252,23 +292,30 @@ resolve Ctx{..} res = case res of
       names (objects, prefixes) = expand set $ case t of [ ] -> objects
                                                          _:_ -> prefixes
 
-listing :: Ctx -> Text -> IO (Attempt ([Text],[Text]))
-listing Ctx{..} prefix = do
-  -- For now, we don't do any results paging, limiting ourselves to the
-  -- first thousand results, as per the Amazon maximums.
-  Aws.Response _meta attempt <- Aws.aws aws s3 manager gb
-  return $ do
-    Aws.GetBucketResponse{..} <- attempt
-    Success (Aws.objectKey <$> gbrContents, gbrCommonPrefixes)
+listing :: Ctx -> Text -> Conduit.ResourceT IO (Attempt ([Text],[Text]))
+listing Ctx{..} prefix =
+  ((concat *** concat) . unzip <$>) <$> listing' Nothing []
  where
+  listing' mark acc = do
+    Aws.Response _meta attempt <- Aws.aws aws s3 manager gb{Aws.gbMarker=mark}
+    case attempt of
+      Success Aws.GetBucketResponse{..} -> do
+        let (keys, pres) = (Aws.objectKey <$> gbrContents, gbrCommonPrefixes)
+        if length keys < 1000 -- TODO: Use truncation flag.
+          then  (return . Success . reverse) ((keys, pres):acc)
+          else  listing' (Just (last keys))  ((keys, pres):acc)
+      Failure e -> return (Failure e)
   gb = Aws.GetBucket { Aws.gbBucket = bucket
                      , Aws.gbPrefix = Just (prefix -/- "")
                      , Aws.gbDelimiter = Just "/"
-                     , Aws.gbMaxKeys = Nothing
+                     , Aws.gbMaxKeys = Just 1000 -- The Amazon maximum.
                      , Aws.gbMarker = Nothing }
 
 expand :: SetWildcard -> [Text] -> [Text]
-expand set texts = if complement then complemented matching else matching
+expand set texts
+  | complement && count == 0 = ordered texts -- Special case for "all" wilcard.
+  | complement               = complemented matching
+  | otherwise                = matching
  where
   matching = (selected . ordered) texts
   uniq = Set.fromList texts
@@ -308,7 +355,7 @@ plusNL :: Blaze.Builder -> Blaze.Builder
 plusNL  = (`mappend` Blaze.fromChar '\n')
 
 order :: Order -> [Text] -> [Text]
-order ASCII  = List.sort
+order ASCII  = id -- Amazon returns them sorted anyways...
 order SemVer = List.sortBy (comparing textSemVer)
 
 textSemVer :: Text -> [Integer]
